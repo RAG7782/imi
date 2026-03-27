@@ -19,7 +19,7 @@ import pytest
 
 from imi.events import MemoryEvent
 from imi.node import MemoryNode
-from imi.storage import JSONBackend, StorageBackend, TimescaleDBBackend
+from imi.storage import JSONBackend, SQLiteBackend, StorageBackend, TimescaleDBBackend
 from imi.temporal import TemporalContext
 
 TSDB_CONN = "postgresql://imi:imi_dev@localhost:5433/imi"
@@ -225,9 +225,23 @@ def tsdb_harness():
     backend.close()
 
 
+@pytest.fixture
+def sqlite_harness(tmp_path):
+    backend = SQLiteBackend(tmp_path / "bench.db")
+    backend.setup()
+    yield IMIBenchmarkHarness(backend, "SQLiteBackend")
+    backend.close()
+
+
 def test_benchmark_json(json_harness):
     results = json_harness.run_all()
     json_harness.print_report()
+    assert results["fidelity"] == 1
+
+
+def test_benchmark_sqlite(sqlite_harness):
+    results = sqlite_harness.run_all()
+    sqlite_harness.print_report()
     assert results["fidelity"] == 1
 
 
@@ -246,13 +260,24 @@ if __name__ == "__main__":
 
     print("Running IMI Storage Benchmarks...\n")
 
+    all_results: dict[str, dict] = {}
+
     # JSON
     with tempfile.TemporaryDirectory() as tmpdir:
         json_backend = JSONBackend(Path(tmpdir) / "bench")
         json_backend.setup()
         json_h = IMIBenchmarkHarness(json_backend, "JSONBackend")
-        json_results = json_h.run_all()
+        all_results["JSON"] = json_h.run_all()
         json_h.print_report()
+
+    # SQLite
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sqlite_backend = SQLiteBackend(Path(tmpdir) / "bench.db")
+        sqlite_backend.setup()
+        sqlite_h = IMIBenchmarkHarness(sqlite_backend, "SQLiteBackend")
+        all_results["SQLite"] = sqlite_h.run_all()
+        sqlite_h.print_report()
+        sqlite_backend.close()
 
     # TimescaleDB
     if _tsdb_available():
@@ -266,23 +291,28 @@ if __name__ == "__main__":
                 cur.execute("DELETE FROM anchors")
             conn.commit()
         tsdb_h = IMIBenchmarkHarness(tsdb_backend, "TimescaleDBBackend")
-        tsdb_results = tsdb_h.run_all()
+        all_results["TSDB"] = tsdb_h.run_all()
         tsdb_h.print_report()
         tsdb_backend.close()
-
-        # Comparison
-        print("\n" + "=" * 60)
-        print("  COMPARISON: JSON vs TimescaleDB")
-        print("=" * 60)
-        for key in sorted(json_results.keys()):
-            if key in tsdb_results and isinstance(json_results[key], (int, float)):
-                j = json_results[key]
-                t = tsdb_results[key]
-                if j > 0 and isinstance(j, float):
-                    ratio = t / j
-                    winner = "JSON" if ratio > 1 else "TSDB"
-                    print(f"  {key:40s}  JSON={j:>10.2f}  TSDB={t:>10.2f}  ({winner})")
-        print("=" * 60)
     else:
         print("TimescaleDB not available — skipping TSDB benchmark.")
         print("Run: docker compose up -d   (from imi/ directory)")
+
+    # Comparison table
+    labels = list(all_results.keys())
+    if len(labels) >= 2:
+        print("\n" + "=" * 80)
+        print(f"  COMPARISON: {' vs '.join(labels)}")
+        print("=" * 80)
+        ref = all_results[labels[0]]
+        for key in sorted(ref.keys()):
+            vals = []
+            for lbl in labels:
+                v = all_results[lbl].get(key)
+                if v is not None and isinstance(v, float):
+                    vals.append((lbl, v))
+            if len(vals) >= 2:
+                parts = "  ".join(f"{lbl}={v:>10.2f}" for lbl, v in vals)
+                best = min(vals, key=lambda x: x[1])[0]
+                print(f"  {key:40s}  {parts}  (best: {best})")
+        print("=" * 80)
