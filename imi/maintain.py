@@ -109,7 +109,7 @@ def fade(
 
 def find_clusters(
     store: VectorStore,
-    similarity_threshold: float = 0.85,
+    similarity_threshold: float = 0.45,
 ) -> list[list[MemoryNode]]:
     """Find groups of highly similar memories (candidates for consolidation)."""
     nodes = [n for n in store.nodes if n.embedding is not None]
@@ -226,7 +226,7 @@ def run_maintenance(
     semantic: VectorStore,
     embedder: Embedder,
     llm: LLMAdapter | None = None,
-    similarity_threshold: float = 0.80,
+    similarity_threshold: float = 0.45,
     budget: int = 100,
 ) -> MaintenanceReport:
     """Execute one maintenance cycle (dreaming).
