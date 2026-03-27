@@ -28,7 +28,7 @@ from imi.maintain import MaintenanceReport, run_maintenance
 from imi.node import MemoryNode
 from imi.reconsolidate import ReconsolidationEvent, reconsolidate
 from imi.spatial import SpatialIndex, TopologyReport
-from imi.storage import StorageBackend
+from imi.storage import SQLiteBackend, StorageBackend
 from imi.store import VectorStore
 from imi.surprise import SurpriseResult, encode_with_surprise, reconstruct_from_surprise
 from imi.tda import TDAReport, AnnealingState, compute_persistent_homology, compute_space_energy
@@ -537,6 +537,22 @@ class IMISpace:
             temporal_index=temporal_index,
             backend=backend,
         )
+
+    @classmethod
+    def from_sqlite(
+        cls,
+        db_path: str | Path,
+        embedder: Embedder | None = None,
+        llm: LLMAdapter | None = None,
+        enable_fts: bool = True,
+    ) -> IMISpace:
+        """Create or load an IMISpace backed by SQLite (recommended default).
+
+        Zero-infra, O(1) inserts, WAL mode, FTS5 search.
+        """
+        backend = SQLiteBackend(db_path, enable_fts=enable_fts)
+        backend.setup()
+        return cls.from_backend(backend, embedder=embedder, llm=llm)
 
     @classmethod
     def load(

@@ -80,16 +80,19 @@ class MemoryNode:
 
     @property
     def relevance(self) -> float:
-        """Relevance score combining recency, frequency, and affect.
+        """Relevance score combining recency, frequency, affect, and surprise.
 
         v3: affect modulates relevance — high-affect memories stay relevant longer.
+        v3.1: surprise_magnitude boosts novel memories (predictive coding integration).
         """
         days_since = (time.time() - self.last_accessed) / 86400
         fade_resist = self.affect.fade_resistance if self.affect else 0.3
         effective_decay = days_since * (1.0 - 0.5 * fade_resist)
         recency = 1.0 / (1.0 + effective_decay)
         frequency = log(1.0 + self.access_count)
-        return recency * (1.0 + frequency) * self.mass
+        # Surprise boost: novel memories are more relevant (0→1.0x, 1.0→1.3x)
+        surprise_boost = 1.0 + 0.3 * self.surprise_magnitude
+        return recency * (1.0 + frequency) * self.mass * surprise_boost
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize for persistence."""
