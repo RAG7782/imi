@@ -1,0 +1,25 @@
+[project]
+name = "imi"
+version = "0.1.0"
+description = "Infinite Memory Image — Cognitive memory system for AI agents"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=0.80.0",
+    "numpy>=1.26.0",
+    "sentence-transformers>=5.0.0",
+]
+
+[project.optional-dependencies]
+spatial = [
+    "umap-learn>=0.5.0",
+    "hdbscan>=0.8.0",
+]
+timescale = [
+    "psycopg[binary]>=3.1.0",
+    "psycopg-pool>=3.1.0",
+]
+all = ["imi[spatial]", "imi[timescale]"]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends._legacy:_Backend"

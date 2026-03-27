@@ -1,0 +1,807 @@
+"""Storage backends for IMI — abstract interface + JSON and TimescaleDB implementations.
+
+The StorageBackend ABC defines the persistence contract. VectorStore remains
+the in-memory search engine; the backend only handles durable storage.
+
+Backends:
+  - JSONBackend: drop-in replacement for the original JSON file persistence
+  - TimescaleDBBackend: append-only versioned storage with event log and temporal queries
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import time
+import uuid
+from abc import ABC, abstractmethod
+from dataclasses import asdict
+from pathlib import Path
+from typing import Any
+
+from imi.events import MemoryEvent
+from imi.node import MemoryNode
+from imi.observe import timed
+from imi.temporal import TemporalContext
+
+logger = logging.getLogger("imi.storage")
+
+
+# ---------------------------------------------------------------------------
+# Abstract base
+# ---------------------------------------------------------------------------
+
+
+class StorageBackend(ABC):
+    """Abstract persistence backend for IMI memory spaces."""
+
+    # --- Node CRUD ---
+
+    @abstractmethod
+    def put_node(self, store_name: str, node: MemoryNode) -> None:
+        """Persist a single node (insert or update)."""
+
+    @abstractmethod
+    def put_nodes(self, store_name: str, nodes: list[MemoryNode]) -> None:
+        """Persist a batch of nodes (full store snapshot)."""
+
+    @abstractmethod
+    def get_node(self, store_name: str, node_id: str) -> MemoryNode | None:
+        """Retrieve a single node by ID (latest version)."""
+
+    @abstractmethod
+    def remove_node(self, store_name: str, node_id: str) -> None:
+        """Mark a node as deleted."""
+
+    @abstractmethod
+    def get_all_nodes(self, store_name: str) -> list[MemoryNode]:
+        """Retrieve all current nodes for a store."""
+
+    # --- Anchors ---
+
+    @abstractmethod
+    def put_anchors(self, anchors: dict[str, list[dict]]) -> None:
+        """Persist anchor data. Keys are node_ids, values are lists of anchor dicts."""
+
+    @abstractmethod
+    def get_anchors(self) -> dict[str, list[dict]]:
+        """Retrieve all anchors as {node_id: [anchor_dict, ...]}."""
+
+    # --- Temporal ---
+
+    @abstractmethod
+    def put_temporal(self, contexts: dict[str, TemporalContext]) -> None:
+        """Persist temporal context data."""
+
+    @abstractmethod
+    def get_temporal(self) -> dict[str, TemporalContext]:
+        """Retrieve all temporal contexts."""
+
+    # --- Events ---
+
+    def log_event(self, event: MemoryEvent) -> None:
+        """Log a mutation event. Default: no-op."""
+
+    def query_events(
+        self,
+        event_type: str | None = None,
+        node_id: str | None = None,
+        since: float | None = None,
+        limit: int = 100,
+    ) -> list[MemoryEvent]:
+        """Query events. Default: empty."""
+        return []
+
+    # --- Advanced temporal queries (TSDB-native overrides) ---
+
+    def query_by_time_range(
+        self,
+        start: float,
+        end: float,
+        store_name: str | None = None,
+    ) -> list[MemoryNode]:
+        """Return nodes created within [start, end] timestamp range."""
+        nodes = []
+        stores = [store_name] if store_name else ["episodic", "semantic"]
+        for sn in stores:
+            for n in self.get_all_nodes(sn):
+                if start <= n.created_at <= end:
+                    nodes.append(n)
+        return nodes
+
+    def query_by_session(self, session_id: str) -> list[str]:
+        """Return node IDs belonging to a session."""
+        return [
+            nid
+            for nid, ctx in self.get_temporal().items()
+            if ctx.session_id == session_id
+        ]
+
+    # --- Versioning ---
+
+    def get_node_history(
+        self, store_name: str, node_id: str
+    ) -> list[MemoryNode]:
+        """Return all versions of a node, newest first. Default: current only."""
+        node = self.get_node(store_name, node_id)
+        return [node] if node else []
+
+    # --- Bulk export/import for migration ---
+
+    @abstractmethod
+    def export_all(self) -> dict[str, Any]:
+        """Export full state as a dict."""
+
+    @abstractmethod
+    def import_all(self, data: dict[str, Any]) -> None:
+        """Import full state from a dict."""
+
+    # --- Lifecycle ---
+
+    def setup(self) -> None:
+        """One-time initialization (create tables, dirs, etc.)."""
+
+    def close(self) -> None:
+        """Release resources."""
+
+
+# ---------------------------------------------------------------------------
+# JSON Backend — wraps the original file persistence
+# ---------------------------------------------------------------------------
+
+
+class JSONBackend(StorageBackend):
+    """Persists IMI state as JSON files — identical behavior to the original."""
+
+    def __init__(self, persist_dir: str | Path) -> None:
+        self.persist_dir = Path(persist_dir)
+
+    def setup(self) -> None:
+        self.persist_dir.mkdir(parents=True, exist_ok=True)
+
+    # --- Nodes ---
+
+    @timed("json.put_node")
+    def put_node(self, store_name: str, node: MemoryNode) -> None:
+        nodes = self.get_all_nodes(store_name)
+        by_id = {n.id: n for n in nodes}
+        by_id[node.id] = node
+        self.put_nodes(store_name, list(by_id.values()))
+
+    @timed("json.put_nodes")
+    def put_nodes(self, store_name: str, nodes: list[MemoryNode]) -> None:
+        path = self.persist_dir / f"{store_name}.json"
+        self.persist_dir.mkdir(parents=True, exist_ok=True)
+        data = [n.to_dict() for n in nodes]
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+
+    @timed("json.get_node")
+    def get_node(self, store_name: str, node_id: str) -> MemoryNode | None:
+        for n in self.get_all_nodes(store_name):
+            if n.id == node_id:
+                return n
+        return None
+
+    @timed("json.remove_node")
+    def remove_node(self, store_name: str, node_id: str) -> None:
+        nodes = [n for n in self.get_all_nodes(store_name) if n.id != node_id]
+        self.put_nodes(store_name, nodes)
+
+    @timed("json.get_all_nodes")
+    def get_all_nodes(self, store_name: str) -> list[MemoryNode]:
+        path = self.persist_dir / f"{store_name}.json"
+        if not path.exists():
+            return []
+        data = json.loads(path.read_text())
+        return [MemoryNode.from_dict(d) for d in data]
+
+    # --- Anchors ---
+
+    @timed("json.put_anchors")
+    def put_anchors(self, anchors: dict[str, list[dict]]) -> None:
+        path = self.persist_dir / "anchors.json"
+        path.write_text(json.dumps(anchors, ensure_ascii=False, indent=2))
+
+    @timed("json.get_anchors")
+    def get_anchors(self) -> dict[str, list[dict]]:
+        path = self.persist_dir / "anchors.json"
+        if not path.exists():
+            return {}
+        return json.loads(path.read_text())
+
+    # --- Temporal ---
+
+    @timed("json.put_temporal")
+    def put_temporal(self, contexts: dict[str, TemporalContext]) -> None:
+        path = self.persist_dir / "temporal.json"
+        data = {nid: ctx.to_dict() for nid, ctx in contexts.items()}
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+
+    @timed("json.get_temporal")
+    def get_temporal(self) -> dict[str, TemporalContext]:
+        path = self.persist_dir / "temporal.json"
+        if not path.exists():
+            return {}
+        data = json.loads(path.read_text())
+        return {nid: TemporalContext.from_dict(d) for nid, d in data.items()}
+
+    # --- Events ---
+
+    def log_event(self, event: MemoryEvent) -> None:
+        path = self.persist_dir / "events.jsonl"
+        with open(path, "a") as f:
+            f.write(json.dumps(event.to_dict(), ensure_ascii=False) + "\n")
+
+    def query_events(
+        self,
+        event_type: str | None = None,
+        node_id: str | None = None,
+        since: float | None = None,
+        limit: int = 100,
+    ) -> list[MemoryEvent]:
+        path = self.persist_dir / "events.jsonl"
+        if not path.exists():
+            return []
+        events = []
+        for line in path.read_text().splitlines():
+            if not line.strip():
+                continue
+            evt = MemoryEvent.from_dict(json.loads(line))
+            if event_type and evt.event_type != event_type:
+                continue
+            if node_id and evt.node_id != node_id:
+                continue
+            if since and evt.timestamp < since:
+                continue
+            events.append(evt)
+            if len(events) >= limit:
+                break
+        return events
+
+    # --- Export/Import ---
+
+    @timed("json.export_all")
+    def export_all(self) -> dict[str, Any]:
+        return {
+            "episodic": [n.to_dict() for n in self.get_all_nodes("episodic")],
+            "semantic": [n.to_dict() for n in self.get_all_nodes("semantic")],
+            "anchors": self.get_anchors(),
+            "temporal": {
+                nid: ctx.to_dict() for nid, ctx in self.get_temporal().items()
+            },
+        }
+
+    @timed("json.import_all")
+    def import_all(self, data: dict[str, Any]) -> None:
+        self.setup()
+        if "episodic" in data:
+            nodes = [MemoryNode.from_dict(d) for d in data["episodic"]]
+            self.put_nodes("episodic", nodes)
+        if "semantic" in data:
+            nodes = [MemoryNode.from_dict(d) for d in data["semantic"]]
+            self.put_nodes("semantic", nodes)
+        if "anchors" in data:
+            self.put_anchors(data["anchors"])
+        if "temporal" in data:
+            contexts = {
+                nid: TemporalContext.from_dict(d)
+                for nid, d in data["temporal"].items()
+            }
+            self.put_temporal(contexts)
+
+
+# ---------------------------------------------------------------------------
+# TimescaleDB Backend
+# ---------------------------------------------------------------------------
+
+SCHEMA_DDL = """
+-- Enable TimescaleDB
+CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;
+
+-- Main node storage: versioned, append-only
+CREATE TABLE IF NOT EXISTS memory_nodes (
+    id              BIGSERIAL,
+    node_id         TEXT NOT NULL,
+    store_name      TEXT NOT NULL,
+    version         INTEGER NOT NULL DEFAULT 1,
+    data            JSONB NOT NULL,
+    embedding       REAL[],
+    is_deleted      BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    inserted_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Convert to hypertable (idempotent) — must be done BEFORE unique constraints
+SELECT create_hypertable('memory_nodes', 'inserted_at',
+                         migrate_data => true,
+                         if_not_exists => true);
+
+-- Unique constraint must include partitioning column (inserted_at) for hypertables
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'uq_memory_nodes_version'
+    ) THEN
+        ALTER TABLE memory_nodes
+            ADD CONSTRAINT uq_memory_nodes_version
+            UNIQUE (node_id, store_name, version, inserted_at);
+    END IF;
+END $$;
+
+-- Indexes
+CREATE INDEX IF NOT EXISTS idx_memory_nodes_latest
+    ON memory_nodes (node_id, store_name, version DESC);
+CREATE INDEX IF NOT EXISTS idx_memory_nodes_created
+    ON memory_nodes (created_at DESC)
+    WHERE NOT is_deleted;
+CREATE INDEX IF NOT EXISTS idx_memory_nodes_store
+    ON memory_nodes (store_name, inserted_at DESC)
+    WHERE NOT is_deleted;
+
+-- Append-only event log
+CREATE TABLE IF NOT EXISTS memory_events (
+    event_id        TEXT NOT NULL,
+    event_type      TEXT NOT NULL,
+    node_id         TEXT NOT NULL DEFAULT '',
+    store_name      TEXT NOT NULL DEFAULT '',
+    node_version    INTEGER NOT NULL DEFAULT 0,
+    metadata        JSONB NOT NULL DEFAULT '{}',
+    timestamp       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+SELECT create_hypertable('memory_events', 'timestamp',
+                         if_not_exists => true);
+
+CREATE INDEX IF NOT EXISTS idx_events_node
+    ON memory_events (node_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_events_type
+    ON memory_events (event_type, timestamp DESC);
+
+-- Temporal contexts
+CREATE TABLE IF NOT EXISTS temporal_contexts (
+    node_id             TEXT PRIMARY KEY,
+    session_id          TEXT NOT NULL DEFAULT '',
+    sequence_pos        INTEGER NOT NULL DEFAULT 0,
+    timestamp           TIMESTAMPTZ NOT NULL,
+    temporal_neighbors  TEXT[] NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_temporal_session
+    ON temporal_contexts (session_id);
+CREATE INDEX IF NOT EXISTS idx_temporal_time
+    ON temporal_contexts (timestamp DESC);
+
+-- Anchors
+CREATE TABLE IF NOT EXISTS anchors (
+    node_id     TEXT NOT NULL,
+    anchor_idx  INTEGER NOT NULL,
+    data        JSONB NOT NULL,
+    PRIMARY KEY (node_id, anchor_idx)
+);
+"""
+
+
+class TimescaleDBBackend(StorageBackend):
+    """Append-only versioned storage on TimescaleDB.
+
+    Uses psycopg v3 directly with connection pooling.
+    Every node mutation is an INSERT (never UPDATE) for full version history.
+    """
+
+    def __init__(
+        self,
+        conn_string: str,
+        min_pool: int = 2,
+        max_pool: int = 10,
+    ) -> None:
+        from psycopg_pool import ConnectionPool
+
+        self.conn_string = conn_string
+        self.pool = ConnectionPool(
+            conn_string,
+            min_size=min_pool,
+            max_size=max_pool,
+            kwargs={"autocommit": False},
+        )
+
+    def setup(self) -> None:
+        """Create schema. Idempotent."""
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(SCHEMA_DDL)
+            conn.commit()
+        logger.info("TimescaleDB schema ready")
+
+    def close(self) -> None:
+        self.pool.close()
+
+    # --- Helpers ---
+
+    def _next_version(self, cur: Any, node_id: str, store_name: str) -> int:
+        cur.execute(
+            "SELECT COALESCE(MAX(version), 0) + 1 FROM memory_nodes "
+            "WHERE node_id = %s AND store_name = %s",
+            (node_id, store_name),
+        )
+        row = cur.fetchone()
+        return row[0] if row else 1
+
+    def _row_to_node(self, row: dict) -> MemoryNode:
+        d = row["data"] if isinstance(row["data"], dict) else json.loads(row["data"])
+        emb = row.get("embedding")
+        if emb is not None:
+            d["embedding"] = emb
+        return MemoryNode.from_dict(d)
+
+    # --- Nodes ---
+
+    @timed("tsdb.put_node")
+    def put_node(self, store_name: str, node: MemoryNode) -> None:
+        from psycopg.types.json import Json
+
+        d = node.to_dict()
+        embedding = d.pop("embedding", None)
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SET synchronous_commit = off;")
+                version = self._next_version(cur, node.id, store_name)
+                cur.execute(
+                    """
+                    INSERT INTO memory_nodes
+                        (node_id, store_name, version, data, embedding, created_at)
+                    VALUES (%s, %s, %s, %s, %s, to_timestamp(%s))
+                    """,
+                    (
+                        node.id,
+                        store_name,
+                        version,
+                        Json(d),
+                        embedding,
+                        node.created_at,
+                    ),
+                )
+            conn.commit()
+
+    @timed("tsdb.put_nodes")
+    def put_nodes(self, store_name: str, nodes: list[MemoryNode]) -> None:
+        if not nodes:
+            return
+        from psycopg.types.json import Json
+
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SET synchronous_commit = off;")
+                for node in nodes:
+                    d = node.to_dict()
+                    embedding = d.pop("embedding", None)
+                    version = self._next_version(cur, node.id, store_name)
+                    cur.execute(
+                        """
+                        INSERT INTO memory_nodes
+                            (node_id, store_name, version, data, embedding, created_at)
+                        VALUES (%s, %s, %s, %s, %s, to_timestamp(%s))
+                        """,
+                        (
+                            node.id,
+                            store_name,
+                            version,
+                            Json(d),
+                            embedding,
+                            node.created_at,
+                        ),
+                    )
+            conn.commit()
+
+    @timed("tsdb.get_node")
+    def get_node(self, store_name: str, node_id: str) -> MemoryNode | None:
+        from psycopg.rows import dict_row
+
+        with self.pool.connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """
+                    SELECT data, embedding, is_deleted
+                    FROM memory_nodes
+                    WHERE node_id = %s AND store_name = %s
+                    ORDER BY version DESC
+                    LIMIT 1
+                    """,
+                    (node_id, store_name),
+                )
+                row = cur.fetchone()
+                if not row or row["is_deleted"]:
+                    return None
+                return self._row_to_node(row)
+
+    @timed("tsdb.remove_node")
+    def remove_node(self, store_name: str, node_id: str) -> None:
+        from psycopg.types.json import Json
+
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SET synchronous_commit = off;")
+                version = self._next_version(cur, node_id, store_name)
+                cur.execute(
+                    """
+                    INSERT INTO memory_nodes
+                        (node_id, store_name, version, data, is_deleted, created_at)
+                    VALUES (%s, %s, %s, %s, TRUE, NOW())
+                    """,
+                    (node_id, store_name, version, Json({})),
+                )
+            conn.commit()
+
+    @timed("tsdb.get_all_nodes")
+    def get_all_nodes(self, store_name: str) -> list[MemoryNode]:
+        from psycopg.rows import dict_row
+
+        with self.pool.connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                # Subquery: get latest version per node, then filter deleted
+                cur.execute(
+                    """
+                    SELECT data, embedding FROM (
+                        SELECT DISTINCT ON (node_id) data, embedding, is_deleted
+                        FROM memory_nodes
+                        WHERE store_name = %s
+                        ORDER BY node_id, version DESC
+                    ) latest
+                    WHERE NOT is_deleted
+                    """,
+                    (store_name,),
+                )
+                return [self._row_to_node(row) for row in cur.fetchall()]
+
+    # --- Anchors ---
+
+    @timed("tsdb.put_anchors")
+    def put_anchors(self, anchors: dict[str, list[dict]]) -> None:
+        from psycopg.types.json import Json
+
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM anchors")
+                for node_id, anchor_list in anchors.items():
+                    for idx, anchor_data in enumerate(anchor_list):
+                        cur.execute(
+                            "INSERT INTO anchors (node_id, anchor_idx, data) "
+                            "VALUES (%s, %s, %s)",
+                            (node_id, idx, Json(anchor_data)),
+                        )
+            conn.commit()
+
+    @timed("tsdb.get_anchors")
+    def get_anchors(self) -> dict[str, list[dict]]:
+        from psycopg.rows import dict_row
+
+        result: dict[str, list[dict]] = {}
+        with self.pool.connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    "SELECT node_id, data FROM anchors ORDER BY node_id, anchor_idx"
+                )
+                for row in cur.fetchall():
+                    nid = row["node_id"]
+                    if nid not in result:
+                        result[nid] = []
+                    d = row["data"] if isinstance(row["data"], dict) else json.loads(row["data"])
+                    result[nid].append(d)
+        return result
+
+    # --- Temporal ---
+
+    @timed("tsdb.put_temporal")
+    def put_temporal(self, contexts: dict[str, TemporalContext]) -> None:
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                for nid, ctx in contexts.items():
+                    cur.execute(
+                        """
+                        INSERT INTO temporal_contexts
+                            (node_id, session_id, sequence_pos, timestamp, temporal_neighbors)
+                        VALUES (%s, %s, %s, to_timestamp(%s), %s)
+                        ON CONFLICT (node_id) DO UPDATE SET
+                            session_id = EXCLUDED.session_id,
+                            sequence_pos = EXCLUDED.sequence_pos,
+                            timestamp = EXCLUDED.timestamp,
+                            temporal_neighbors = EXCLUDED.temporal_neighbors
+                        """,
+                        (
+                            nid,
+                            ctx.session_id,
+                            ctx.sequence_pos,
+                            ctx.timestamp,
+                            ctx.temporal_neighbors,
+                        ),
+                    )
+            conn.commit()
+
+    @timed("tsdb.get_temporal")
+    def get_temporal(self) -> dict[str, TemporalContext]:
+        from psycopg.rows import dict_row
+
+        result = {}
+        with self.pool.connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute("SELECT * FROM temporal_contexts")
+                for row in cur.fetchall():
+                    ts = row["timestamp"]
+                    # Convert datetime to float if needed
+                    if hasattr(ts, "timestamp"):
+                        ts = ts.timestamp()
+                    result[row["node_id"]] = TemporalContext(
+                        timestamp=ts,
+                        session_id=row["session_id"],
+                        sequence_pos=row["sequence_pos"],
+                        temporal_neighbors=list(row["temporal_neighbors"] or []),
+                    )
+        return result
+
+    # --- Events ---
+
+    @timed("tsdb.log_event")
+    def log_event(self, event: MemoryEvent) -> None:
+        from psycopg.types.json import Json
+
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SET synchronous_commit = off;")
+                cur.execute(
+                    """
+                    INSERT INTO memory_events
+                        (event_id, event_type, node_id, store_name,
+                         node_version, metadata, timestamp)
+                    VALUES (%s, %s, %s, %s, %s, %s, to_timestamp(%s))
+                    """,
+                    (
+                        event.event_id,
+                        event.event_type,
+                        event.node_id,
+                        event.store_name,
+                        event.node_version,
+                        Json(event.metadata),
+                        event.timestamp,
+                    ),
+                )
+            conn.commit()
+
+    def query_events(
+        self,
+        event_type: str | None = None,
+        node_id: str | None = None,
+        since: float | None = None,
+        limit: int = 100,
+    ) -> list[MemoryEvent]:
+        from psycopg.rows import dict_row
+
+        query = "SELECT * FROM memory_events WHERE TRUE"
+        params: list[Any] = []
+
+        if event_type:
+            query += " AND event_type = %s"
+            params.append(event_type)
+        if node_id:
+            query += " AND node_id = %s"
+            params.append(node_id)
+        if since:
+            query += " AND timestamp >= to_timestamp(%s)"
+            params.append(since)
+
+        query += " ORDER BY timestamp DESC LIMIT %s"
+        params.append(limit)
+
+        with self.pool.connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(query, params)
+                events = []
+                for row in cur.fetchall():
+                    ts = row["timestamp"]
+                    if hasattr(ts, "timestamp"):
+                        ts = ts.timestamp()
+                    md = row["metadata"]
+                    if isinstance(md, str):
+                        md = json.loads(md)
+                    events.append(
+                        MemoryEvent(
+                            event_id=row["event_id"],
+                            event_type=row["event_type"],
+                            node_id=row["node_id"],
+                            store_name=row["store_name"],
+                            timestamp=ts,
+                            metadata=md,
+                            node_version=row["node_version"],
+                        )
+                    )
+                return events
+
+    # --- Advanced temporal queries ---
+
+    @timed("tsdb.query_by_time_range")
+    def query_by_time_range(
+        self,
+        start: float,
+        end: float,
+        store_name: str | None = None,
+    ) -> list[MemoryNode]:
+        from psycopg.rows import dict_row
+
+        inner = """
+            SELECT DISTINCT ON (node_id) data, embedding, is_deleted
+            FROM memory_nodes
+            WHERE created_at BETWEEN to_timestamp(%s) AND to_timestamp(%s)
+        """
+        params: list[Any] = [start, end]
+
+        if store_name:
+            inner += " AND store_name = %s"
+            params.append(store_name)
+
+        inner += " ORDER BY node_id, version DESC"
+        query = f"SELECT data, embedding FROM ({inner}) latest WHERE NOT is_deleted"
+
+        with self.pool.connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(query, params)
+                return [self._row_to_node(row) for row in cur.fetchall()]
+
+    @timed("tsdb.query_by_session")
+    def query_by_session(self, session_id: str) -> list[str]:
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT node_id FROM temporal_contexts WHERE session_id = %s "
+                    "ORDER BY sequence_pos",
+                    (session_id,),
+                )
+                return [row[0] for row in cur.fetchall()]
+
+    # --- Versioning ---
+
+    @timed("tsdb.get_node_history")
+    def get_node_history(
+        self, store_name: str, node_id: str
+    ) -> list[MemoryNode]:
+        from psycopg.rows import dict_row
+
+        with self.pool.connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """
+                    SELECT data, embedding, version
+                    FROM memory_nodes
+                    WHERE node_id = %s AND store_name = %s
+                    ORDER BY version DESC
+                    """,
+                    (node_id, store_name),
+                )
+                return [self._row_to_node(row) for row in cur.fetchall()]
+
+    # --- Export/Import ---
+
+    @timed("tsdb.export_all")
+    def export_all(self) -> dict[str, Any]:
+        return {
+            "episodic": [n.to_dict() for n in self.get_all_nodes("episodic")],
+            "semantic": [n.to_dict() for n in self.get_all_nodes("semantic")],
+            "anchors": self.get_anchors(),
+            "temporal": {
+                nid: ctx.to_dict() for nid, ctx in self.get_temporal().items()
+            },
+        }
+
+    @timed("tsdb.import_all")
+    def import_all(self, data: dict[str, Any]) -> None:
+        if "episodic" in data:
+            nodes = [MemoryNode.from_dict(d) for d in data["episodic"]]
+            self.put_nodes("episodic", nodes)
+        if "semantic" in data:
+            nodes = [MemoryNode.from_dict(d) for d in data["semantic"]]
+            self.put_nodes("semantic", nodes)
+        if "anchors" in data:
+            self.put_anchors(data["anchors"])
+        if "temporal" in data:
+            contexts = {
+                nid: TemporalContext.from_dict(d)
+                for nid, d in data["temporal"].items()
+            }
+            self.put_temporal(contexts)
