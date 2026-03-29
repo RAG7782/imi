@@ -37,18 +37,19 @@ dependencies = [
 
 [project.optional-dependencies]
 llm = ["anthropic>=0.80.0"]
+mcp = ["mcp[cli]>=1.0.0"]
 spatial = ["umap-learn>=0.5.0", "hdbscan>=0.8.0"]
-all = ["imi-memory[llm]", "imi-memory[spatial]"]
+all = ["imi-memory[llm]", "imi-memory[mcp]", "imi-memory[spatial]"]
 dev = [
     "pytest>=8.0.0",
     "ruff>=0.4.0",
 ]
 
 [project.urls]
-Homepage = "https://github.com/renatoaparegomes/imi"
-Documentation = "https://github.com/renatoaparegomes/imi#readme"
-Repository = "https://github.com/renatoaparegomes/imi"
-Issues = "https://github.com/renatoaparegomes/imi/issues"
+Homepage = "https://github.com/RAG7782/imi"
+Documentation = "https://github.com/RAG7782/imi#readme"
+Repository = "https://github.com/RAG7782/imi"
+Issues = "https://github.com/RAG7782/imi/issues"
 
 [build-system]
 requires = ["setuptools>=68.0", "wheel"]

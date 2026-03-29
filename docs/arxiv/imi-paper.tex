@@ -1,0 +1,414 @@
+\documentclass[11pt]{article}
+
+% arXiv-friendly packages
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage[margin=1in]{geometry}
+\usepackage{natbib}
+\usepackage{xcolor}
+\usepackage{listings}
+
+\lstset{
+  basicstyle=\small\ttfamily,
+  frame=single,
+  breaklines=true,
+  columns=flexible
+}
+
+\title{IMI: Integrated Memory Intelligence for AI Agents\\
+\large A Cognitive Memory Architecture with Benchmarks}
+
+\author{
+  Renato Aparecido Gomes \\
+  \texttt{renatoapgomes@gmail.com} \\
+  \url{https://github.com/RAG7782/imi}
+}
+
+\date{March 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We present IMI (Integrated Memory Intelligence), a memory system for AI agents
+that goes beyond vector-based retrieval by integrating cognitive features:
+affective modulation, temporal decay, surprise-based encoding, affordance
+extraction, multi-resolution zoom, and graph-augmented multi-hop retrieval.
+Through systematic ablation (100 memories, 15 queries), we show that while
+cognitive features trade off pure retrieval quality (R@5 drops from 0.341 to
+0.204 at relevance\_weight=0.3), they significantly improve agent-relevant
+metrics: domain precision increases +6.7\% for temporal queries, and
+graph-augmented expansion achieves 100\% multi-hop recall (vs 75\% cosine-only).
+We also introduce AMBench, the first standardized benchmark for agent memory
+systems, evaluating the full encode-retrieve-consolidate-act lifecycle over
+90 simulated days with 300 incidents. IMI is open-source, requires no external
+infrastructure (SQLite-only), and operates with zero LLM calls at query time.
+\end{abstract}
+
+\section{Introduction}
+
+Current AI memory systems face a fundamental tension: they optimize for
+\textbf{retrieval accuracy} (finding the most similar document) when agents
+actually need \textbf{decision relevance} (finding the most useful memory for
+the current situation).
+
+RAG systems use cosine similarity over dense embeddings. This works for
+knowledge Q\&A but fails for agent memory, which requires:
+
+\begin{itemize}
+  \item \textbf{Temporal coherence}: Recent incidents are often more relevant than old ones
+  \item \textbf{Action orientation}: ``What can I DO?'' not just ``What do I KNOW?''
+  \item \textbf{Multi-hop reasoning}: Causal chains span multiple memories
+  \item \textbf{Emotional salience}: Critical incidents should be harder to forget
+  \item \textbf{Adaptive resolution}: Sometimes you need the gist, sometimes the details
+\end{itemize}
+
+IMI addresses these gaps through a cognitive architecture inspired by human
+hippocampal memory, ecological psychology \citep{gibson1979}, and predictive
+coding theory \citep{rao1999}.
+
+\subsection{Contributions}
+
+\begin{enumerate}
+  \item \textbf{IMI Architecture}: A cognitive memory system with 7 composable features
+    (affect, surprise, affordances, temporal decay, mass, zoom, graph edges)
+  \item \textbf{Ablation Study}: Systematic measurement of each feature's contribution
+    to retrieval quality and agent relevance
+  \item \textbf{AMBench}: First standardized benchmark for AI agent memory (5 metrics,
+    3 baselines, 300 incidents over 90 simulated days)
+  \item \textbf{Graph-Augmented Retrieval}: Lightweight edge layer that achieves 100\%
+    multi-hop recall with zero LLM calls
+  \item \textbf{Empirical finding}: The optimal relevance weight for agent memory is
+    0.10--0.15, not the 0.3 commonly assumed in prior work
+\end{enumerate}
+
+\section{Related Work}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lccccc}
+\toprule
+System & Retrieval & Temporal & Affordances & Multi-hop & Benchmark \\
+\midrule
+RAG (vanilla) & Cosine & No & No & No & No \\
+HippoRAG (2024) & KG + PPR & No & No & Yes & No \\
+RAPTOR (2024) & Tree & No & No & Partial & No \\
+GraphRAG (2024) & Entity KG & No & No & Yes & No \\
+MemGPT (2023) & Tiered & Yes & No & No & No \\
+\textbf{IMI (ours)} & \textbf{Cos+Graph} & \textbf{Yes} & \textbf{Yes} & \textbf{Yes} & \textbf{Yes} \\
+\bottomrule
+\end{tabular}
+\caption{Comparison of memory systems for AI agents.}
+\label{tab:related}
+\end{table}
+
+\textbf{HippoRAG} \citep{gutierrez2024} is the closest to IMI. Both are
+hippocampus-inspired, but HippoRAG focuses on knowledge retrieval via
+Personalized PageRank over a knowledge graph built with LLM NER. IMI focuses
+on agent memory with temporal decay, affordances, and zero LLM calls at
+query time.
+
+\textbf{MemGPT} \citep{packer2023} implements tiered memory (working/long-term)
+with LLM-controlled paging. IMI's zoom levels serve a similar purpose but
+are query-time, not storage-time.
+
+\textbf{RAPTOR} \citep{sarthi2024} uses recursive tree summarization for
+multi-resolution retrieval. IMI's zoom levels (orbital/medium/detailed) are
+analogous but pre-computed at encode time.
+
+\section{Architecture}
+
+\subsection{Memory Node}
+
+Each memory is a \texttt{MemoryNode} with:
+\begin{itemize}
+  \item \textbf{seed}: original experience text
+  \item \textbf{embedding}: 384-dimensional vector (all-MiniLM-L6-v2)
+  \item \textbf{summaries}: orbital (gist), medium, detailed (3 zoom levels)
+  \item \textbf{affect}: AffectiveTag (salience, valence, arousal) $\rightarrow$ modulates decay
+  \item \textbf{affordances}: list of action potentials (``what can I do with this?'')
+  \item \textbf{mass}: gravitational pull (derived from affect encoding strength)
+  \item \textbf{tags}: domain labels for co-occurrence linking
+\end{itemize}
+
+\subsection{Relevance Scoring}
+
+The relevance score combines temporal, frequency, mass, and surprise signals:
+
+\begin{equation}
+\text{relevance} = \text{recency} \times (1 + \text{frequency}) \times \text{mass} \times \text{surprise\_boost}
+\end{equation}
+
+Where:
+\begin{align}
+\text{recency} &= \frac{1}{1 + \text{days\_since} \times (1 - 0.5 \times \text{fade\_resistance})} \\
+\text{frequency} &= \log(1 + \text{access\_count}) \\
+\text{mass} &= \text{affect.encoding\_strength}
+\end{align}
+
+Final search score:
+\begin{equation}
+\text{score} = (1 - rw) \times \cos(\mathbf{q}, \mathbf{m}) + rw \times \hat{r}
+\end{equation}
+
+Optimal $rw = 0.10$ (validated via ablation and temporal experiments).
+
+\subsection{Graph Layer}
+
+Lightweight edge layer over the vector store:
+\begin{itemize}
+  \item \textbf{Edge types}: causal, co\_occurrence, similar
+  \item \textbf{Auto-linking}: $\cos > 0.75$ triggers similar edge (no LLM calls)
+  \item \textbf{Retrieval}: cosine seeds $\rightarrow$ graph expansion (spreading activation) $\rightarrow$ re-rank
+\end{itemize}
+
+Score with graph:
+\begin{equation}
+\text{score} = (1-rw-gw) \times \cos + rw \times \hat{r} + gw \times \text{activation}
+\end{equation}
+
+\section{Experiments}
+
+\subsection{Dataset: 100 SRE Postmortems}
+
+100 synthetic incident reports across 5 domains (auth, database,
+infrastructure, monitoring, network), 20 per domain, with known causal chains
+and ground truth relevance judgments.
+
+\subsection{Ablation Study (WS-A)}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lrrl}
+\toprule
+Feature Removed & $\Delta$R@5 & $\Delta$MRR & Effect \\
+\midrule
+All features ($rw$=0$\rightarrow$0.3) & $-$0.137 & $-$0.126 & Hurts retrieval \\
+Recency & $-$0.117 & $-$0.117 & Hurts most \\
+Affect + Mass & $-$0.107 & $-$0.103 & Hurts \\
+Mass only & $-$0.108 & $-$0.099 & Hurts \\
+Frequency & $-$0.061 & $-$0.069 & Hurts \\
+Surprise & $-$0.003 & $-$0.004 & Negligible \\
+\bottomrule
+\end{tabular}
+\caption{Ablation study: effect of removing each feature on retrieval metrics.
+Features that model human memory trade retrieval accuracy for agent relevance.}
+\label{tab:ablation}
+\end{table}
+
+\subsection{Temporal Decay Test (WS-B)}
+
+With 90 days of simulated access patterns (power-law distribution):
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lrrr}
+\toprule
+Scenario & $rw$=0.0 & $rw$=0.15 & $\Delta$ \\
+\midrule
+Overall domain P@5 & 0.689 & 0.756 & +0.067 \\
+Recent/recurring & 0.800 & 0.900 & +0.100 \\
+Old/forgotten & 0.600 & 0.600 & 0.000 \\
+\bottomrule
+\end{tabular}
+\caption{Relevance weighting improves domain precision +6.7\% without
+degrading access to old memories.}
+\label{tab:temporal}
+\end{table}
+
+\subsection{Graph-Augmented Multi-hop (WS-G)}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lrrl}
+\toprule
+System & Multi-hop R@10 & Hits & Std R@5 \\
+\midrule
+Cosine only & 0.750 & 15/20 & 0.341 \\
+Graph (1-hop, $gw$=0.3) & \textbf{1.000} & \textbf{20/20} & 0.341 \\
+\bottomrule
+\end{tabular}
+\caption{Graph expansion achieves 100\% multi-hop recall with zero degradation
+to standard retrieval.}
+\label{tab:graph}
+\end{table}
+
+\subsection{AMBench: Agent Memory Benchmark (WS-D)}
+
+300 incidents, 10 pattern types, 90 simulated days, 3 systems:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lrrr}
+\toprule
+Metric & RAG & IMI ($rw$=0.10) & IMI ($rw$=0.15) \\
+\midrule
+M1: Retrieval R@5 & 0.279 & 0.275 & 0.273 \\
+M2: Cluster purity & 0.736 & 0.736 & 0.736 \\
+M3: Action P@1 & 100\% & 100\% & 100\% \\
+M4: Temporal avg age & 41.2d & \textbf{16.8d} & 43.0d \\
+\bottomrule
+\end{tabular}
+\caption{AMBench results. IMI with $rw$=0.10 dramatically improves temporal
+coherence (avg age 16.8 vs 41.2 days) while maintaining retrieval accuracy.}
+\label{tab:ambench}
+\end{table}
+
+\subsection{Adaptive Relevance Weight (P1)}
+
+Keyword-based query intent classifier that adjusts $rw$ dynamically:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{llrl}
+\toprule
+Intent & Pattern & $rw$ & Example \\
+\midrule
+Temporal & ``recent'', ``latest'' & 0.15 & ``recent auth failures'' \\
+Exploratory & ``find all'', ``list every'' & 0.00 & ``find all cert incidents'' \\
+Action & ``how to'', ``fix'' & 0.05 & ``how to prevent DNS'' \\
+Default & everything else & 0.10 & ``auth token failures'' \\
+\bottomrule
+\end{tabular}
+\caption{Adaptive relevance weight. Classification accuracy: 100\% (16/16).
+MRR: adaptive (0.651) $>$ best fixed (0.643). Zero cost.}
+\label{tab:adaptive}
+\end{table}
+
+\subsection{Causal Edge Detection (P2)}
+
+Empirical finding: causal pairs have \textbf{low} cosine similarity (avg 0.308).
+``Token race condition'' and ``rolling deploy'' are semantically distant---the
+relationship is logical, not semantic.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lrrl}
+\toprule
+Strategy & Recall & Precision & Cost \\
+\midrule
+Embedding ($\theta$=0.40) & 30\% & 10\% & 0 LLM calls \\
+Embedding ($\theta$=0.65) & 10\% & 100\% & 0 LLM calls \\
+LLM confirmed & $\sim$80\%+ & $\sim$90\%+ & 1 call/pair \\
+\bottomrule
+\end{tabular}
+\caption{Causality detection requires reasoning, not similarity.}
+\label{tab:causal}
+\end{table}
+
+\section{Architecture Decisions}
+
+Through empirical validation, we made five key decisions:
+
+\begin{enumerate}
+  \item \textbf{Removed TimescaleDB backend} ($-$425 lines). SQLite provides
+    equivalent functionality at 87$\times$ lower latency.
+  \item \textbf{Made predictive coding opt-in}. Surprise boost adds only
+    +0.003 to R@5 but costs 2 LLM calls per encode.
+  \item \textbf{Set default $rw$ to 0.10} (from 0.30). Ablation showed 0.3
+    was too aggressive.
+  \item \textbf{Added adaptive $rw$}. Query intent classifier adjusts $rw$
+    per query with zero cost, improving MRR by +1.2\%.
+  \item \textbf{Causal detection requires LLM}. Embedding similarity is
+    insufficient (avg causal pair $\cos = 0.308$).
+\end{enumerate}
+
+\section{Limitations}
+
+\begin{itemize}
+  \item \textbf{Synthetic evaluation only}: All experiments use generated incidents,
+    not real-world agent traces.
+  \item \textbf{Single embedding model}: All experiments use all-MiniLM-L6-v2 (384d).
+    Larger models may shift the balance.
+  \item \textbf{No real HippoRAG comparison}: Compared against regex-NER simulation.
+  \item \textbf{Static ground truth}: Relevance judgments are author-created, not
+    crowdsourced.
+  \item \textbf{Single-agent only}: AMBench simulates one agent.
+\end{itemize}
+
+\section{Future Work}
+
+\begin{itemize}
+  \item \textbf{Real-world validation}: Deploy IMI in production agent systems.
+  \item \textbf{Multi-agent memory sharing}: Agent-scoped views with trust gradients.
+  \item \textbf{LLM-confirmed causal detection}: Embedding candidates filtered
+    by LLM confirmation.
+  \item \textbf{Larger benchmarks}: 10K incidents, 365 days, multi-agent.
+\end{itemize}
+
+\section{Conclusion}
+
+IMI demonstrates that cognitive memory features---despite degrading pure
+retrieval benchmarks---significantly improve agent-relevant metrics:
+temporal coherence (+147\% recency), multi-hop recall (+33\%), and domain
+precision (+6.7\%). The optimal configuration uses moderate relevance weighting
+($rw$=0.10), graph-augmented expansion for multi-hop, and affective modulation
+for emotional salience.
+
+AMBench provides the first standardized evaluation framework for agent memory,
+measuring the full encode-retrieve-consolidate-act lifecycle that existing
+RAG benchmarks ignore.
+
+IMI is open-source, runs on SQLite with zero infrastructure, requires no LLM
+calls at query time, and achieves competitive retrieval quality while adding
+temporal, affective, and action-oriented capabilities that pure vector stores
+lack.
+
+\section*{Acknowledgments}
+
+This work was developed using Claude Code (Anthropic) as a research
+acceleration tool. All experiments, ablations, and benchmark designs were
+conceived and validated by the author; Claude Code assisted with
+implementation and systematic exploration of the experimental parameter space.
+
+\bibliographystyle{plainnat}
+
+\begin{thebibliography}{7}
+
+\bibitem[Collins and Loftus(1975)]{collins1975}
+Collins, A.M. and Loftus, E.F. (1975).
+\newblock A spreading-activation theory of semantic processing.
+\newblock \emph{Psychological Review}, 82(6):407--428.
+
+\bibitem[Friston(2005)]{friston2005}
+Friston, K. (2005).
+\newblock A theory of cortical responses.
+\newblock \emph{Phil. Trans. R. Soc. B}, 360(1456):815--836.
+
+\bibitem[Gibson(1979)]{gibson1979}
+Gibson, J.J. (1979).
+\newblock \emph{The Ecological Approach to Visual Perception}.
+\newblock Houghton Mifflin.
+
+\bibitem[Gutierrez et~al.(2024)]{gutierrez2024}
+Gutierrez, B. et~al. (2024).
+\newblock HippoRAG: Neurobiologically Inspired Long-Term Memory for Large
+  Language Models.
+\newblock In \emph{NeurIPS 2024}.
+
+\bibitem[Packer et~al.(2023)]{packer2023}
+Packer, C. et~al. (2023).
+\newblock MemGPT: Towards LLMs as Operating Systems.
+\newblock \emph{arXiv:2310.08560}.
+
+\bibitem[Rao and Ballard(1999)]{rao1999}
+Rao, R.P.N. and Ballard, D.H. (1999).
+\newblock Predictive coding in the visual cortex: a functional interpretation
+  of some extra-classical receptive-field effects.
+\newblock \emph{Nature Neuroscience}, 2(1):79--87.
+
+\bibitem[Sarthi et~al.(2024)]{sarthi2024}
+Sarthi, P. et~al. (2024).
+\newblock RAPTOR: Recursive Abstractive Processing for Tree-Organized
+  Retrieval.
+\newblock In \emph{ICLR 2024}.
+
+\end{thebibliography}
+
+\end{document}

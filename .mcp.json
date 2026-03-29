@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "imi-memory": {
+      "command": "python",
+      "args": ["-m", "imi.mcp_server"],
+      "cwd": "/Users/renatoaparegomes/experimentos/imi",
+      "env": {
+        "IMI_DB": "imi_memory.db",
+        "VIRTUAL_ENV": "/Users/renatoaparegomes/experimentos/imi/.venv",
+        "PATH": "/Users/renatoaparegomes/experimentos/imi/.venv/bin:/usr/bin:/bin"
+      }
+    }
+  }
+}
