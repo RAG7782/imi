@@ -21,3 +21,4 @@ htmlcov/
 docs/arxiv/*.aux
 docs/arxiv/*.log
 docs/arxiv/*.out
+site/

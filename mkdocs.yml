@@ -1,0 +1,63 @@
+docs_dir: docs-site
+site_name: IMI — Integrated Memory Intelligence
+site_description: Cognitive memory system for AI agents
+site_url: https://RAG7782.github.io/imi/
+repo_url: https://github.com/RAG7782/imi
+repo_name: RAG7782/imi
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Dark mode
+    - scheme: slate
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Light mode
+  features:
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+    - search.highlight
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/install.md
+    - Quickstart: getting-started/quickstart.md
+    - Architecture: getting-started/architecture.md
+  - Features:
+    - Adaptive Relevance: features/adaptive-rw.md
+    - Graph Retrieval: features/graph.md
+    - Affordances: features/affordances.md
+    - Consolidation: features/dream.md
+  - Integrations:
+    - MCP Server: integrations/mcp.md
+    - REST API: integrations/rest-api.md
+    - LangChain: integrations/langchain.md
+  - Research:
+    - Insights: research/insights.md
+    - Paper: research/paper.md
+    - Experiments: research/experiments.md
+  - API Reference: api-reference.md
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details
+  - tables
+  - toc:
+      permalink: true
+
+plugins:
+  - search
