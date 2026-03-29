@@ -1,95 +1,60 @@
 # Handoff: Próxima Sessão IMI
 
-> Gerado em 2026-03-27 | Continuação da sessão WS1-WS4
+> Gerado em 2026-03-29 | Semana 1 completa: Publish & Package
 
 ---
 
 ## Estado Atual
 
-### O que foi feito nesta sessão (5 commits)
-1. **SQLiteBackend** — zero-infra, 87x mais rápido que JSON, FTS5, WAL mode (`imi/storage.py`)
-2. **Fix threshold clustering** — 0.80/0.85 → 0.45 (consolidação estava morta) (`imi/maintain.py`)
-3. **Surprise integrado no relevance** — era dead code, agora boost de 30% (`imi/node.py`)
-4. **IMI Lite-B (ZoomRAG)** — zoom+affordances sobre ChromaDB, ~160 linhas (`imi/lite.py`)
-5. **Validation framework WS3** — 100 postmortems, 5 domínios, métricas empíricas (`experiments/ws3_validation_framework.py`)
+### Tarefas completadas nesta sessão
 
-### Testes: 46 passando, zero regressões
+| # | Tarefa | Status | Detalhes |
+|---|--------|--------|----------|
+| 1 | PyPI package | Done | pyproject.toml completo, `imi-memory` v0.2.0, sdist+wheel building |
+| 2 | LICENSE + .gitignore | Done | MIT license, .gitignore expandido |
+| 3 | README.md | Done | Quickstart, badges, architecture, experiments, citation |
+| 4 | CI/CD | Done | `.github/workflows/ci.yml` (lint+test 3.11-3.13) + `publish.yml` (PyPI on release) |
+| 5 | arXiv paper | Done | English polished, acknowledgments, future work updated, submit-ready |
 
-### Backends disponíveis
-- **SQLiteBackend** ← recomendado (default via `IMISpace.from_sqlite()`)
-- JSONBackend (legado, O(n) put_node)
-- TimescaleDBBackend (over-engineering, requer Docker)
+### Testes: 53 passando, zero regressões
 
----
-
-## Resultados WS4 — Todas as 6 perguntas respondidas
-
-| # | Pergunta | Resultado |
-|---|----------|-----------|
-| Q1 | Zoom = RAG wrapper? | **Não.** IMI core = ~200 linhas, zoom wrapper = ~50 mas perde affect/affordances/reconstrução |
-| Q2 | Predictive coding funciona? | **Era dead code.** Integrado no relevance (boost 30%). 2 LLM calls (~1000 tok) por encoding |
-| Q3 | Affordances estáveis? | **Textualmente 10-20%, semanticamente 75-85%.** Embedding absorve variação |
-| Q4 | IMI vs RAG+Reranker? | **Empate** no retrieval puro. IMI ganha em features (zoom/affordances/affect) |
-| Q5 | Bug no threshold? | **Sim, inverso**: 0.80/0.85 matava consolidação. 0.45 correto. Corrigido |
-| Q6 | Competidores? | HippoRAG (NeurIPS'24), RAPTOR (ICLR'24), GraphRAG (MS). **IMI: zero benchmarks** |
-
-## Resultados WS2 — IMI Full vs Lite-B
-
-| Métrica | RAG Puro | Lite-B | IMI Full |
-|---------|----------|--------|----------|
-| Recall@5 | 0.583 | 0.583 | 0.583 |
-| Features | Retrieval | +Zoom +Affordances | +Relevance +Affect +Surprise +Temporal +Consolidation |
-| LOC | ~10 | ~160 | ~2000+ |
-
-**Conclusão**: Retrieval idêntico. Full's value = features não-retrieval.
-
-## Resultados WS3 — Validação Empírica (100 postmortems)
-
-| Métrica | Valor |
-|---------|-------|
-| Recall@5 | 0.341 |
-| Recall@10 | 0.525 |
-| nDCG@5 | 0.447 |
-| MRR | 0.643 |
-| Cluster purity | **0.798** (14 clusters, 5 domains) |
-| Affordance precision@3 | 0.67-1.00 |
-| Zoom token savings | 10x |
+### Package build: `imi_memory-0.2.0.tar.gz` + `.whl` building OK
 
 ---
 
-## Workstreams para próxima sessão
+## Próximos passos imediatos
 
-### WS-A: Ablation Study (prioridade alta)
-**Pergunta**: Quanto cada feature contribui individualmente?
-- [ ] IMI Full vs no-surprise vs no-affect vs no-affordances vs pure-cosine
-- [ ] Medir Recall@5/nDCG@5 para cada variante
-- [ ] Determinar quais features justificam seu custo computacional
-- Script base: `experiments/ws3_validation_framework.py`
+### 1. Git init + primeiro push
+```bash
+cd ~/experimentos/imi
+git init
+git add .
+git commit -m "Initial commit: IMI v0.2.0"
+git remote add origin git@github.com:renatoaparegomes/imi.git
+git push -u origin main
+```
 
-### WS-B: Temporal Decay Test
-**Pergunta**: Relevance weighting (recency/frequency) melhora retrieval ao longo do tempo?
-- [ ] Simular 90 dias de uso com acesso desigual a memórias
-- [ ] Comparar retrieval com/sem relevance weighting
-- [ ] Testar se memórias acessadas recentemente sobem no ranking
+### 2. PyPI publish
+```bash
+pip install twine
+twine upload dist/*
+# Ou: criar GitHub release → workflow publish.yml faz automaticamente
+```
 
-### WS-C: HippoRAG Comparison
-**Pergunta**: IMI vs HippoRAG no mesmo dataset
-- [ ] Instalar HippoRAG
-- [ ] Rodar nos 100 postmortems do WS3
-- [ ] Comparar Recall@K e custo (LLM calls / tokens)
-- Resultado esperado: IMI perde em multi-hop, ganha em action-oriented retrieval
+### 3. arXiv submit
+- Upload `docs/paper-draft.md` convertido para LaTeX/PDF
+- Categoria: cs.AI ou cs.CL
+- Incluir figuras de `docs/figures/`
 
-### WS-D: Agent Memory Benchmark (contribuição acadêmica)
-**Pergunta**: Criar o primeiro benchmark padrão para memória de agentes
-- [ ] Definir task: agente SRE processando 300 incidentes em 90 dias simulados
-- [ ] Métricas: retrieval accuracy, consolidation quality, action relevance, temporal coherence
-- [ ] Baseline: RAG puro, IMI Lite-B, IMI Full
-- Nenhum competidor publica benchmark para este caso de uso
+### 4. Semana 3-4: Real-world Validation
+- Integrar IMI no Claude Code como memory hook
+- Rodar com agente SRE real por 2 semanas
+- Medir task completion antes/depois
 
-### WS-E: Decisões de arquitetura pendentes
-1. **Cortar TimescaleDBBackend?** — SQLite domina em tudo, TSDB é complexidade desnecessária
-2. **Tornar predictive coding opt-in?** — 2 LLM calls extras, benefício marginal (30% boost)
-3. **Adicionar temperature=0.3 às affordances?** — Melhoria de estabilidade grátis
+### 5. Semana 5-8: Product
+- API REST (FastAPI): /encode, /navigate, /dream, /affordances
+- IMI como MCP server
+- LangChain integration
 
 ---
 
@@ -97,22 +62,21 @@
 
 ```bash
 source .venv/bin/activate
-python -m pytest tests/ -v                                    # 46 tests
-PYTHONPATH=. python experiments/ws3_validation_framework.py   # WS3 validation
-PYTHONPATH=. python experiments/ws2_full_vs_liteb_benchmark.py # WS2 comparison
-PYTHONPATH=. python experiments/ws4_threshold_analysis.py      # Threshold analysis
-PYTHONPATH=. python experiments/ws4_imi_vs_rag_reranker.py     # Q4 RAG comparison
-PYTHONPATH=. python tests/test_benchmark.py                    # Storage benchmark
-docker compose up -d  # TimescaleDB (optional)
+python -m pytest tests/ -v                                       # 53 tests
+python -m build                                                  # Build package
+
+# Experiments
+PYTHONPATH=. python experiments/ws_a_ablation_study.py
+PYTHONPATH=. python experiments/ws_b_temporal_decay.py
+PYTHONPATH=. python experiments/ws_g_graph_augmented_retrieval.py
+PYTHONPATH=. python experiments/ws_d_agent_memory_benchmark.py
+PYTHONPATH=. python experiments/p1_adaptive_rw.py
+PYTHONPATH=. python experiments/p2_causal_detection.py
+PYTHONPATH=. python experiments/p3_paper_figures.py
 ```
 
-## Arquivos-chave modificados nesta sessão
-- `imi/storage.py` — SQLiteBackend (novo)
-- `imi/node.py` — surprise no relevance scoring
-- `imi/space.py` — from_sqlite() factory
-- `imi/maintain.py` — threshold fix 0.80→0.45
-- `imi/lite.py` — ZoomRAG Lite-B (novo)
-- `experiments/ws3_validation_framework.py` — validation benchmark (novo)
-- `experiments/ws2_full_vs_liteb_benchmark.py` — Full vs Lite-B (novo)
-- `experiments/ws4_threshold_analysis.py` — threshold analysis (novo)
-- `experiments/ws4_imi_vs_rag_reranker.py` — IMI vs RAG (novo)
+## Docs de referência
+- `docs/INSIGHTS.md` — Consolidação completa
+- `docs/PERSPECTIVAS.md` — Análise multi-dimensional (8 perspectivas)
+- `docs/paper-draft.md` — Paper arXiv-ready
+- `docs/figures/` — 5 PNG + 1 TXT

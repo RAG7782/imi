@@ -1,25 +1,68 @@
 [project]
-name = "imi"
-version = "0.1.0"
-description = "Infinite Memory Image — Cognitive memory system for AI agents"
+name = "imi-memory"
+version = "0.2.0"
+description = "Integrated Memory Intelligence — Cognitive memory system for AI agents with temporal decay, affordances, graph-augmented retrieval, and adaptive relevance weighting."
+readme = "README.md"
+license = "MIT"
 requires-python = ">=3.11"
+authors = [
+    { name = "Renato Aparecido Gomes", email = "renatoapgomes@gmail.com" },
+]
+keywords = [
+    "ai-agents",
+    "memory",
+    "cognitive-architecture",
+    "rag",
+    "vector-store",
+    "retrieval",
+    "graph-retrieval",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
 dependencies = [
-    "anthropic>=0.80.0",
     "numpy>=1.26.0",
-    "sentence-transformers>=5.0.0",
+    "sentence-transformers>=3.0.0",
+    "chromadb>=0.5.0",
 ]
 
 [project.optional-dependencies]
-spatial = [
-    "umap-learn>=0.5.0",
-    "hdbscan>=0.8.0",
+llm = ["anthropic>=0.80.0"]
+spatial = ["umap-learn>=0.5.0", "hdbscan>=0.8.0"]
+all = ["imi-memory[llm]", "imi-memory[spatial]"]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.4.0",
 ]
-timescale = [
-    "psycopg[binary]>=3.1.0",
-    "psycopg-pool>=3.1.0",
-]
-all = ["imi[spatial]", "imi[timescale]"]
+
+[project.urls]
+Homepage = "https://github.com/renatoaparegomes/imi"
+Documentation = "https://github.com/renatoaparegomes/imi#readme"
+Repository = "https://github.com/renatoaparegomes/imi"
+Issues = "https://github.com/renatoaparegomes/imi/issues"
 
 [build-system]
-requires = ["setuptools>=68.0"]
-build-backend = "setuptools.backends._legacy:_Backend"
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["imi*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

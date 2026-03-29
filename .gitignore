@@ -8,3 +8,13 @@ build/
 imi_data/
 *.json.bak
 .env
+.env.*
+*.db
+*.sqlite
+.ruff_cache/
+.mypy_cache/
+*.egg
+MANIFEST
+htmlcov/
+.coverage
+.DS_Store
