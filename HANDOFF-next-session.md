@@ -1,60 +1,57 @@
 # Handoff: Próxima Sessão IMI
 
-> Gerado em 2026-03-29 | Semana 1 completa: Publish & Package
+> Gerado em 2026-03-29 | Semana 1-2 completas + MCP server + arXiv LaTeX
 
 ---
 
 ## Estado Atual
 
-### Tarefas completadas nesta sessão
+### Concluído nesta sessão
 
-| # | Tarefa | Status | Detalhes |
-|---|--------|--------|----------|
-| 1 | PyPI package | Done | pyproject.toml completo, `imi-memory` v0.2.0, sdist+wheel building |
-| 2 | LICENSE + .gitignore | Done | MIT license, .gitignore expandido |
-| 3 | README.md | Done | Quickstart, badges, architecture, experiments, citation |
-| 4 | CI/CD | Done | `.github/workflows/ci.yml` (lint+test 3.11-3.13) + `publish.yml` (PyPI on release) |
-| 5 | arXiv paper | Done | English polished, acknowledgments, future work updated, submit-ready |
+| # | Tarefa | Detalhes |
+|---|--------|----------|
+| 1 | PyPI package | `imi-memory` v0.2.0, sdist+wheel OK |
+| 2 | LICENSE + .gitignore | MIT, 20+ patterns |
+| 3 | README.md | Quickstart, architecture, citation |
+| 4 | CI/CD | lint+test (3.11-3.13) + PyPI publish on release |
+| 5 | arXiv paper | LaTeX compilado, 7 páginas, `docs/arxiv/imi-paper.pdf` |
+| 6 | **MCP Server** | 6 tools, stdio+SSE, testado com protocol handshake |
+| 7 | **Claude Code config** | `.mcp.json` pronto para uso |
+| 8 | NotebookLM | 67 sources (todos os arquivos do projeto) |
 
 ### Testes: 53 passando, zero regressões
 
-### Package build: `imi_memory-0.2.0.tar.gz` + `.whl` building OK
+### MCP Server: 6 tools
+- `imi_encode` — store memory
+- `imi_navigate` — search with adaptive rw + graph expansion
+- `imi_dream` — consolidation cycle
+- `imi_search_actions` — search by affordances
+- `imi_stats` — memory space statistics
+- `imi_graph_link` — manual edge creation
 
 ---
 
-## Próximos passos imediatos
+## Próximos passos
 
-### 1. Git init + primeiro push
+### 1. PyPI publish
 ```bash
-cd ~/experimentos/imi
-git init
-git add .
-git commit -m "Initial commit: IMI v0.2.0"
-git remote add origin git@github.com:renatoaparegomes/imi.git
-git push -u origin main
+twine upload dist/*  # precisa de token PyPI
+# Ou: GitHub release → workflow publish.yml automático
 ```
 
-### 2. PyPI publish
-```bash
-pip install twine
-twine upload dist/*
-# Ou: criar GitHub release → workflow publish.yml faz automaticamente
-```
+### 2. arXiv submit
+PDF pronto em `docs/arxiv/imi-paper.pdf`. Upload em arxiv.org, categoria cs.AI.
 
-### 3. arXiv submit
-- Upload `docs/paper-draft.md` convertido para LaTeX/PDF
-- Categoria: cs.AI ou cs.CL
-- Incluir figuras de `docs/figures/`
+### 3. Real-world validation (Semana 3-4)
+- Rodar Claude Code com IMI MCP server ativado (`.mcp.json` já existe)
+- Usar por 2 semanas em tarefas reais
+- Medir: task completion, recall qualitativo, memórias úteis vs noise
 
-### 4. Semana 3-4: Real-world Validation
-- Integrar IMI no Claude Code como memory hook
-- Rodar com agente SRE real por 2 semanas
-- Medir task completion antes/depois
-
-### 5. Semana 5-8: Product
-- API REST (FastAPI): /encode, /navigate, /dream, /affordances
-- IMI como MCP server
-- LangChain integration
+### 4. Semana 5-8
+- API REST (FastAPI)
+- Docs site (mkdocs)
+- LangChain integration (BaseMemory adapter)
+- FAISS backend para >50K memories
 
 ---
 
@@ -62,21 +59,17 @@ twine upload dist/*
 
 ```bash
 source .venv/bin/activate
-python -m pytest tests/ -v                                       # 53 tests
-python -m build                                                  # Build package
+python -m pytest tests/ -v                    # 53 tests
+python -m build                               # Package
+
+# MCP Server (stdio)
+python -m imi.mcp_server
+
+# MCP Server (SSE)
+IMI_TRANSPORT=sse IMI_PORT=8080 python -m imi.mcp_server
 
 # Experiments
 PYTHONPATH=. python experiments/ws_a_ablation_study.py
-PYTHONPATH=. python experiments/ws_b_temporal_decay.py
 PYTHONPATH=. python experiments/ws_g_graph_augmented_retrieval.py
-PYTHONPATH=. python experiments/ws_d_agent_memory_benchmark.py
 PYTHONPATH=. python experiments/p1_adaptive_rw.py
-PYTHONPATH=. python experiments/p2_causal_detection.py
-PYTHONPATH=. python experiments/p3_paper_figures.py
 ```
-
-## Docs de referência
-- `docs/INSIGHTS.md` — Consolidação completa
-- `docs/PERSPECTIVAS.md` — Análise multi-dimensional (8 perspectivas)
-- `docs/paper-draft.md` — Paper arXiv-ready
-- `docs/figures/` — 5 PNG + 1 TXT
