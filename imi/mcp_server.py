@@ -184,7 +184,7 @@ def imi_dream() -> str:
         "patterns_extracted": report.patterns_extracted,
         "convergence": {
             "energy": round(space.annealing.energy_history[-1], 4) if space.annealing.energy_history else None,
-            "steps": space.annealing.step_count,
+            "steps": space.annealing.iteration,
             "converged": space.annealing.converged,
         },
         "total_episodic": len(space.episodic),
@@ -247,7 +247,7 @@ def imi_stats() -> str:
             "nodes_with_edges": graph_stats.get("nodes_with_edges", 0),
         },
         "annealing": {
-            "steps": space.annealing.step_count,
+            "steps": space.annealing.iteration,
             "converged": space.annealing.converged,
             "energy": round(space.annealing.energy_history[-1], 4) if space.annealing.energy_history else None,
         },
