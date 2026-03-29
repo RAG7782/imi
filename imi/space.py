@@ -17,12 +17,15 @@ from typing import Any
 
 import numpy as np
 
+from imi.adaptive import AdaptiveRW
 from imi.affect import AffectiveTag, assess_affect
 from imi.affordance import Affordance, extract_affordances
 from imi.anchors import Anchor, ConfidenceReport, extract_anchors, compute_confidence
+from imi.causal import auto_link_causal
 from imi.core import compress_seed, remember, summarize, get_llm
 from imi.embedder import Embedder, SentenceTransformerEmbedder
 from imi.events import NAVIGATE_ACCESS, MemoryEvent
+from imi.graph import MemoryGraph
 from imi.llm import LLMAdapter
 from imi.maintain import MaintenanceReport, run_maintenance
 from imi.node import MemoryNode
@@ -100,6 +103,12 @@ class IMISpace:
     # Anchors
     _anchors: dict[str, list[Anchor]] = field(default_factory=dict)
 
+    # Graph layer (multi-hop)
+    graph: MemoryGraph = field(default_factory=MemoryGraph)
+
+    # Adaptive relevance weight
+    adaptive_rw: AdaptiveRW = field(default_factory=AdaptiveRW)
+
     # Reconsolidation log
     reconsolidation_log: list[ReconsolidationEvent] = field(default_factory=list)
 
@@ -126,7 +135,7 @@ class IMISpace:
         tags: list[str] | None = None,
         source: str = "",
         context_hint: str = "",
-        use_predictive_coding: bool = True,
+        use_predictive_coding: bool = False,
         timestamp: float | None = None,
     ) -> MemoryNode:
         """Transform an experience into a memory node.
@@ -205,6 +214,13 @@ class IMISpace:
         # Store in EPISODIC
         self.episodic.add(node)
 
+        # 10. Auto-link graph edges (similarity-based, zero LLM calls)
+        if len(self.episodic) > 5:
+            auto_link_causal(
+                node, self.episodic, self.graph,
+                threshold=0.65, max_edges=2, llm=None,
+            )
+
         if self.persist_dir:
             self.save()
 
@@ -219,21 +235,38 @@ class IMISpace:
         zoom: Zoom | str = Zoom.MEDIUM,
         top_k: int = 20,
         context: str = "",
-        relevance_weight: float = 0.3,
+        relevance_weight: float | None = None,
         include_semantic: bool = True,
         include_tda: bool = False,
         reconsolidate_on_access: bool = False,
+        use_graph: bool = True,
+        graph_weight: float = 0.2,
     ) -> NavigationResult:
-        """Navigate the memory space with full v3 features."""
+        """Navigate the memory space with full v3 features.
+
+        If relevance_weight is None, uses AdaptiveRW to select optimal rw
+        based on query intent (temporal → 0.15, exploratory → 0.0, etc.).
+        """
         if isinstance(zoom, str):
             zoom = Zoom(zoom)
 
+        # Adaptive relevance weight
+        if relevance_weight is None:
+            relevance_weight = self.adaptive_rw.classify(query)
+
         query_emb = self.embedder.embed(query)
 
-        # Search both stores
-        episodic_results = self.episodic.search(
-            query_emb, top_k=top_k, relevance_weight=relevance_weight
-        )
+        # Graph-augmented search if graph has edges
+        if use_graph and self.graph.stats()["total_edges"] > 0:
+            episodic_results = self.graph.search_with_expansion(
+                self.episodic, query_emb, top_k=top_k,
+                relevance_weight=relevance_weight,
+                graph_weight=graph_weight,
+            )
+        else:
+            episodic_results = self.episodic.search(
+                query_emb, top_k=top_k, relevance_weight=relevance_weight
+            )
         semantic_results = []
         if include_semantic and len(self.semantic) > 0:
             semantic_results = self.semantic.search(
@@ -509,6 +542,11 @@ class IMISpace:
             _json.dumps(temporal_data, ensure_ascii=False, indent=2)
         )
 
+        # Save graph edges
+        (d / "graph.json").write_text(
+            _json.dumps(self.graph.to_dict(), ensure_ascii=False, indent=2)
+        )
+
     @classmethod
     def from_backend(
         cls,
@@ -577,6 +615,11 @@ class IMISpace:
             for nid, ctx_d in data.items():
                 temporal_index.contexts[nid] = TemporalContext.from_dict(ctx_d)
 
+        graph = MemoryGraph()
+        if (d / "graph.json").exists():
+            data = _json.loads((d / "graph.json").read_text())
+            graph = MemoryGraph.from_dict(data)
+
         return cls(
             episodic=episodic,
             semantic=semantic,
@@ -584,6 +627,7 @@ class IMISpace:
             llm=llm,
             _anchors=anchors,
             temporal_index=temporal_index,
+            graph=graph,
             persist_dir=d,
         )
 
