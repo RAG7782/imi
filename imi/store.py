@@ -84,7 +84,7 @@ class VectorStore:
         self,
         query_embedding: np.ndarray,
         top_k: int = 20,
-        relevance_weight: float = 0.3,
+        relevance_weight: float = 0.1,
     ) -> list[tuple[MemoryNode, float]]:
         """Search by cosine similarity, weighted by relevance (recency × frequency).
 

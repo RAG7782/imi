@@ -60,6 +60,7 @@ def extract_affordances(experience: str, llm: LLMAdapter) -> list[Affordance]:
         system=EXTRACT_AFFORDANCES_SYSTEM,
         prompt=f"Experience:\n{experience}\n\nWhat future actions does this enable?",
         max_tokens=400,
+        temperature=0.3,
     )
 
     raw = raw.strip()

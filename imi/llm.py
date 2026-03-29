@@ -10,7 +10,7 @@ from typing import Protocol
 class LLMAdapter(Protocol):
     """Protocol for any LLM backend."""
 
-    def generate(self, system: str, prompt: str, max_tokens: int = 1024) -> str: ...
+    def generate(self, system: str, prompt: str, max_tokens: int = 1024, temperature: float | None = None) -> str: ...
 
 
 @dataclass
@@ -25,11 +25,14 @@ class ClaudeLLM:
 
         self._client = anthropic.Anthropic()
 
-    def generate(self, system: str, prompt: str, max_tokens: int = 1024) -> str:
-        response = self._client.messages.create(
-            model=self.model,
-            max_tokens=max_tokens,
-            system=system,
-            messages=[{"role": "user", "content": prompt}],
-        )
+    def generate(self, system: str, prompt: str, max_tokens: int = 1024, temperature: float | None = None) -> str:
+        kwargs: dict = {
+            "model": self.model,
+            "max_tokens": max_tokens,
+            "system": system,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if temperature is not None:
+            kwargs["temperature"] = temperature
+        response = self._client.messages.create(**kwargs)
         return response.content[0].text

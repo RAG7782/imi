@@ -1,7 +1,6 @@
 """Tests for IMI storage backends.
 
-JSONBackend tests run without any infrastructure.
-TimescaleDBBackend tests require docker-compose up and are marked @integration.
+JSONBackend and SQLiteBackend tests run without any infrastructure.
 """
 
 from __future__ import annotations
@@ -14,10 +13,8 @@ import pytest
 
 from imi.events import ENCODE, CONSOLIDATE, MemoryEvent
 from imi.node import MemoryNode
-from imi.storage import JSONBackend, SQLiteBackend, TimescaleDBBackend
+from imi.storage import JSONBackend, SQLiteBackend
 from imi.temporal import TemporalContext
-
-TSDB_CONN = "postgresql://imi:imi_dev@localhost:5433/imi"
 
 
 # ---------------------------------------------------------------------------
@@ -380,149 +377,3 @@ class TestSQLiteBackend:
         conn = backend._get_conn()
         row = conn.execute("PRAGMA journal_mode").fetchone()
         assert row[0] == "wal"
-
-
-# ---------------------------------------------------------------------------
-# TimescaleDB Backend Tests
-# ---------------------------------------------------------------------------
-
-
-def _tsdb_available() -> bool:
-    try:
-        import psycopg
-        with psycopg.connect(TSDB_CONN, autocommit=True) as conn:
-            conn.execute("SELECT 1")
-        return True
-    except Exception:
-        return False
-
-
-@pytest.fixture
-def tsdb_backend():
-    if not _tsdb_available():
-        pytest.skip("TimescaleDB not available at localhost:5433")
-    backend = TimescaleDBBackend(TSDB_CONN)
-    backend.setup()
-    # Clean test data
-    with backend.pool.connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM memory_nodes")
-            cur.execute("DELETE FROM memory_events")
-            cur.execute("DELETE FROM temporal_contexts")
-            cur.execute("DELETE FROM anchors")
-        conn.commit()
-    yield backend
-    backend.close()
-
-
-class TestTimescaleDBBackend:
-    def test_put_get_node(self, tsdb_backend):
-        node = make_node(0)
-        tsdb_backend.put_node("episodic", node)
-        loaded = tsdb_backend.get_node("episodic", node.id)
-        assert loaded is not None
-        assert loaded.id == node.id
-        assert loaded.seed == node.seed
-
-    def test_put_nodes_get_all(self, tsdb_backend):
-        nodes = [make_node(i) for i in range(5)]
-        tsdb_backend.put_nodes("episodic", nodes)
-        loaded = tsdb_backend.get_all_nodes("episodic")
-        assert len(loaded) == 5
-
-    def test_remove_node(self, tsdb_backend):
-        nodes = [make_node(i) for i in range(3)]
-        tsdb_backend.put_nodes("episodic", nodes)
-        tsdb_backend.remove_node("episodic", nodes[1].id)
-        loaded = tsdb_backend.get_all_nodes("episodic")
-        assert len(loaded) == 2
-
-    def test_node_versioning(self, tsdb_backend):
-        node = make_node(0)
-        tsdb_backend.put_node("episodic", node)
-        # Mutate and save again
-        node.access_count = 5
-        node.summary_medium = "updated medium"
-        tsdb_backend.put_node("episodic", node)
-        # Get latest
-        latest = tsdb_backend.get_node("episodic", node.id)
-        assert latest.access_count == 5
-        assert latest.summary_medium == "updated medium"
-        # Get history
-        history = tsdb_backend.get_node_history("episodic", node.id)
-        assert len(history) == 2
-
-    def test_embedding_fidelity(self, tsdb_backend):
-        node = make_node(0)
-        original_emb = node.embedding.copy()
-        tsdb_backend.put_node("episodic", node)
-        loaded = tsdb_backend.get_node("episodic", node.id)
-        assert loaded is not None
-        np.testing.assert_array_almost_equal(
-            loaded.embedding, original_emb, decimal=5
-        )
-
-    def test_time_range_query(self, tsdb_backend):
-        now = time.time()
-        nodes = [
-            make_node(0, id="old", created_at=now - 86400 * 7),
-            make_node(1, id="recent", created_at=now - 3600),
-            make_node(2, id="very_old", created_at=now - 86400 * 30),
-        ]
-        tsdb_backend.put_nodes("episodic", nodes)
-        result = tsdb_backend.query_by_time_range(now - 86400 * 2, now, "episodic")
-        assert len(result) == 1
-        assert result[0].id == "recent"
-
-    def test_events(self, tsdb_backend):
-        tsdb_backend.log_event(
-            MemoryEvent(event_type=ENCODE, node_id="n1", store_name="episodic")
-        )
-        tsdb_backend.log_event(
-            MemoryEvent(event_type=CONSOLIDATE, node_id="p1", store_name="semantic")
-        )
-        events = tsdb_backend.query_events()
-        assert len(events) == 2
-        filtered = tsdb_backend.query_events(event_type=ENCODE)
-        assert len(filtered) == 1
-
-    def test_temporal(self, tsdb_backend):
-        contexts = {
-            "n1": TemporalContext(
-                timestamp=time.time(),
-                session_id="s1",
-                sequence_pos=1,
-                temporal_neighbors=["n2"],
-            ),
-            "n2": TemporalContext(
-                timestamp=time.time() + 60,
-                session_id="s1",
-                sequence_pos=2,
-                temporal_neighbors=["n1"],
-            ),
-        }
-        tsdb_backend.put_temporal(contexts)
-        loaded = tsdb_backend.get_temporal()
-        assert len(loaded) == 2
-        assert loaded["n1"].session_id == "s1"
-
-    def test_session_query(self, tsdb_backend):
-        tsdb_backend.put_temporal(
-            {
-                "n1": TemporalContext(timestamp=time.time(), session_id="s1"),
-                "n2": TemporalContext(timestamp=time.time(), session_id="s2"),
-                "n3": TemporalContext(timestamp=time.time(), session_id="s1"),
-            }
-        )
-        result = tsdb_backend.query_by_session("s1")
-        assert set(result) == {"n1", "n3"}
-
-    def test_export_import(self, tsdb_backend):
-        nodes = [make_node(i) for i in range(3)]
-        tsdb_backend.put_nodes("episodic", nodes)
-        tsdb_backend.put_anchors(
-            {"test_0000": [{"type": "fact", "reference": "test"}]}
-        )
-        data = tsdb_backend.export_all()
-        assert len(data["episodic"]) == 3
-        assert "test_0000" in data["anchors"]

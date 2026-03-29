@@ -1,7 +1,7 @@
 """IMI-specific benchmark harness.
 
 Measures real IMI storage operations, not generic ops/s.
-Compares JSONBackend vs TimescaleDBBackend on the same workloads.
+Compares JSONBackend vs SQLiteBackend on the same workloads.
 
 Usage:
     pytest tests/test_benchmark.py -v -s
@@ -19,10 +19,8 @@ import pytest
 
 from imi.events import MemoryEvent
 from imi.node import MemoryNode
-from imi.storage import JSONBackend, SQLiteBackend, StorageBackend, TimescaleDBBackend
+from imi.storage import JSONBackend, SQLiteBackend, StorageBackend
 from imi.temporal import TemporalContext
-
-TSDB_CONN = "postgresql://imi:imi_dev@localhost:5433/imi"
 
 
 def make_node(i: int) -> MemoryNode:
@@ -197,34 +195,6 @@ def json_harness(tmp_path):
     return IMIBenchmarkHarness(backend, "JSONBackend")
 
 
-def _tsdb_available() -> bool:
-    try:
-        import psycopg
-
-        with psycopg.connect(TSDB_CONN, autocommit=True) as conn:
-            conn.execute("SELECT 1")
-        return True
-    except Exception:
-        return False
-
-
-@pytest.fixture
-def tsdb_harness():
-    if not _tsdb_available():
-        pytest.skip("TimescaleDB not available")
-    backend = TimescaleDBBackend(TSDB_CONN)
-    backend.setup()
-    with backend.pool.connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM memory_nodes")
-            cur.execute("DELETE FROM memory_events")
-            cur.execute("DELETE FROM temporal_contexts")
-            cur.execute("DELETE FROM anchors")
-        conn.commit()
-    yield IMIBenchmarkHarness(backend, "TimescaleDBBackend")
-    backend.close()
-
-
 @pytest.fixture
 def sqlite_harness(tmp_path):
     backend = SQLiteBackend(tmp_path / "bench.db")
@@ -242,12 +212,6 @@ def test_benchmark_json(json_harness):
 def test_benchmark_sqlite(sqlite_harness):
     results = sqlite_harness.run_all()
     sqlite_harness.print_report()
-    assert results["fidelity"] == 1
-
-
-def test_benchmark_tsdb(tsdb_harness):
-    results = tsdb_harness.run_all()
-    tsdb_harness.print_report()
     assert results["fidelity"] == 1
 
 
@@ -278,25 +242,6 @@ if __name__ == "__main__":
         all_results["SQLite"] = sqlite_h.run_all()
         sqlite_h.print_report()
         sqlite_backend.close()
-
-    # TimescaleDB
-    if _tsdb_available():
-        tsdb_backend = TimescaleDBBackend(TSDB_CONN)
-        tsdb_backend.setup()
-        with tsdb_backend.pool.connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("DELETE FROM memory_nodes")
-                cur.execute("DELETE FROM memory_events")
-                cur.execute("DELETE FROM temporal_contexts")
-                cur.execute("DELETE FROM anchors")
-            conn.commit()
-        tsdb_h = IMIBenchmarkHarness(tsdb_backend, "TimescaleDBBackend")
-        all_results["TSDB"] = tsdb_h.run_all()
-        tsdb_h.print_report()
-        tsdb_backend.close()
-    else:
-        print("TimescaleDB not available — skipping TSDB benchmark.")
-        print("Run: docker compose up -d   (from imi/ directory)")
 
     # Comparison table
     labels = list(all_results.keys())
