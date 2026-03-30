@@ -22,3 +22,8 @@ docs/arxiv/*.aux
 docs/arxiv/*.log
 docs/arxiv/*.out
 site/
+
+# SQLite temp files
+*.db-shm
+*.db-wal
+*.db-journal
