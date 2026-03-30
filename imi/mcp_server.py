@@ -43,17 +43,16 @@ _space = None
 
 
 def _get_space():
-    """Get or create the global IMISpace instance."""
+    """Get or create the global IMISpace instance.
+
+    Always uses SQLite backend for persistence. Memories survive restarts.
+    """
     global _space
     if _space is None:
         from imi.space import IMISpace
 
         db_path = os.environ.get("IMI_DB", "imi_memory.db")
-        persist_dir = Path(db_path).with_suffix("")
-        if persist_dir.exists():
-            _space = IMISpace.load(persist_dir)
-        else:
-            _space = IMISpace.from_sqlite(db_path)
+        _space = IMISpace.from_sqlite(db_path)
     return _space
 
 

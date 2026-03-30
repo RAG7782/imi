@@ -221,7 +221,7 @@ class IMISpace:
                 threshold=0.65, max_edges=2, llm=None,
             )
 
-        if self.persist_dir:
+        if self.persist_dir or self.backend:
             self.save()
 
         return node
@@ -366,7 +366,7 @@ class IMISpace:
                 },
             ))
 
-        if self.persist_dir:
+        if self.persist_dir or self.backend:
             self.save()
 
         return NavigationResult(
@@ -506,7 +506,7 @@ class IMISpace:
                 energy = compute_space_energy(embeddings, masses)
                 self.annealing.step(energy)
 
-        if self.persist_dir:
+        if self.persist_dir or self.backend:
             self.save()
 
         return report
@@ -524,6 +524,12 @@ class IMISpace:
             self.backend.put_nodes("semantic", self.semantic.nodes)
             self.backend.put_anchors(anchors_data)
             self.backend.put_temporal(self.temporal_index.contexts)
+            # Save graph alongside the db file
+            if hasattr(self.backend, 'db_path'):
+                graph_path = Path(self.backend.db_path).with_suffix(".graph.json")
+                graph_path.write_text(
+                    _json.dumps(self.graph.to_dict(), ensure_ascii=False, indent=2)
+                )
             return
 
         d = Path(path or self.persist_dir or "imi_data")
@@ -566,6 +572,14 @@ class IMISpace:
         temporal_index = TemporalIndex()
         temporal_index.contexts = backend.get_temporal()
 
+        # Restore graph if saved alongside db
+        graph = MemoryGraph()
+        if hasattr(backend, 'db_path'):
+            graph_path = Path(backend.db_path).with_suffix(".graph.json")
+            if graph_path.exists():
+                data = _json.loads(graph_path.read_text())
+                graph = MemoryGraph.from_dict(data)
+
         return cls(
             episodic=episodic,
             semantic=semantic,
@@ -573,6 +587,7 @@ class IMISpace:
             llm=llm,
             _anchors=anchors,
             temporal_index=temporal_index,
+            graph=graph,
             backend=backend,
         )
 
