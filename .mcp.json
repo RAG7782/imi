@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "imi-memory": {
-      "command": "python",
+      "command": "/Users/renatoaparegomes/experimentos/imi/.venv/bin/python",
       "args": ["-m", "imi.mcp_server"],
       "cwd": "/Users/renatoaparegomes/experimentos/imi",
       "env": {
