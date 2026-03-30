@@ -149,7 +149,7 @@ Full documentation: [docs site](docs-site/) · [Paper (arXiv-ready)](docs/arxiv/
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Apache 2.0 — see [LICENSE](LICENSE).
 
 ## Citation
 

@@ -3,7 +3,7 @@ name = "imi-memory"
 version = "0.2.0"
 description = "Integrated Memory Intelligence — Cognitive memory system for AI agents with temporal decay, affordances, graph-augmented retrieval, and adaptive relevance weighting."
 readme = "README.md"
-license = "MIT"
+license = "Apache-2.0"
 requires-python = ">=3.11"
 authors = [
     { name = "Renato Aparecido Gomes", email = "renatoapgomes@gmail.com" },

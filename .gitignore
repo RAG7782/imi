@@ -23,6 +23,11 @@ docs/arxiv/*.log
 docs/arxiv/*.out
 site/
 
+# Claude Code local config
+.claude/
+.mcp.json
+HANDOFF-*.md
+
 # SQLite temp files
 *.db-shm
 *.db-wal
