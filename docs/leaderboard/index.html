@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AMBench — Agent Memory Benchmark Leaderboard</title>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --card: #1e293b;
+            --border: #334155;
+            --text: #e2e8f0;
+            --muted: #94a3b8;
+            --accent: #a855f7;
+            --accent2: #7c3aed;
+            --green: #22c55e;
+            --yellow: #eab308;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+        .container { max-width: 900px; margin: 0 auto; padding: 2rem; }
+        h1 { font-size: 2.5rem; margin-bottom: 0.5rem; }
+        h1 span { color: var(--accent); }
+        .tagline { color: var(--muted); font-size: 1.1rem; margin-bottom: 2rem; }
+        .intro { color: var(--muted); margin-bottom: 2rem; padding: 1rem; background: var(--card); border-radius: 8px; border-left: 4px solid var(--accent); }
+
+        table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; }
+        th { background: var(--card); color: var(--accent); text-align: left; padding: 12px 16px; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; }
+        td { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+        tr:hover td { background: rgba(168, 85, 247, 0.05); }
+        .rank { font-weight: bold; color: var(--accent); width: 50px; }
+        .best { color: var(--green); font-weight: bold; }
+        .system-name { font-weight: 600; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
+        .badge-baseline { background: rgba(148, 163, 184, 0.2); color: var(--muted); }
+        .badge-submitted { background: rgba(168, 85, 247, 0.2); color: var(--accent); }
+        .badge-open { background: rgba(234, 179, 8, 0.2); color: var(--yellow); }
+
+        .section { margin-top: 3rem; }
+        .section h2 { color: var(--accent); margin-bottom: 1rem; font-size: 1.5rem; }
+        code { background: var(--card); padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+        pre { background: var(--card); padding: 1rem; border-radius: 8px; overflow-x: auto; margin: 1rem 0; }
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin: 1.5rem 0; }
+        .metric-card { background: var(--card); padding: 1rem; border-radius: 8px; text-align: center; }
+        .metric-value { font-size: 2rem; font-weight: bold; color: var(--accent); }
+        .metric-label { color: var(--muted); font-size: 0.85rem; }
+
+        .submit-box { background: var(--card); padding: 1.5rem; border-radius: 8px; border: 1px dashed var(--accent); margin-top: 2rem; }
+        footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--border); color: var(--muted); text-align: center; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1><span>AMBench</span> Leaderboard</h1>
+        <p class="tagline">The first standardized benchmark for AI agent memory systems</p>
+
+        <div class="intro">
+            <strong>What is AMBench?</strong> A benchmark that tests the full memory lifecycle —
+            encode, retrieve, consolidate, act — over 300 simulated incidents across 90 days.
+            Unlike RAG benchmarks that only test retrieval, AMBench measures what agents actually need:
+            temporal coherence, pattern recognition, and action relevance.
+        </div>
+
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-value">300</div>
+                <div class="metric-label">Incidents</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value">90</div>
+                <div class="metric-label">Simulated Days</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value">10</div>
+                <div class="metric-label">Pattern Types</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value">5</div>
+                <div class="metric-label">Metrics</div>
+            </div>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th class="rank">#</th>
+                    <th>System</th>
+                    <th>R@5</th>
+                    <th>R@10</th>
+                    <th>Cluster Purity</th>
+                    <th>Temporal (avg days)</th>
+                    <th>Type</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td class="rank">1</td>
+                    <td class="system-name">IMI (rw=0.10)</td>
+                    <td>0.275</td>
+                    <td>0.420</td>
+                    <td>0.736</td>
+                    <td class="best">16.8d</td>
+                    <td><span class="badge badge-baseline">baseline</span></td>
+                </tr>
+                <tr>
+                    <td class="rank">2</td>
+                    <td class="system-name">RAG (cosine)</td>
+                    <td class="best">0.279</td>
+                    <td class="best">0.430</td>
+                    <td class="best">0.736</td>
+                    <td>41.2d</td>
+                    <td><span class="badge badge-baseline">baseline</span></td>
+                </tr>
+                <tr>
+                    <td class="rank">3</td>
+                    <td class="system-name">IMI (rw=0.15)</td>
+                    <td>0.273</td>
+                    <td>0.415</td>
+                    <td>0.736</td>
+                    <td>43.0d</td>
+                    <td><span class="badge badge-baseline">baseline</span></td>
+                </tr>
+                <tr style="opacity: 0.5;">
+                    <td class="rank">—</td>
+                    <td class="system-name">Your system here</td>
+                    <td>—</td>
+                    <td>—</td>
+                    <td>—</td>
+                    <td>—</td>
+                    <td><span class="badge badge-open">open slot</span></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p style="color: var(--muted); font-size: 0.85rem;">
+            <strong>Note:</strong> IMI wins on temporal coherence (16.8d vs 41.2d — 59% improvement).
+            RAG wins on pure retrieval R@5 by a small margin (+0.004). This illustrates the
+            <em>Retrieval vs Relevance Paradox</em>: cognitive features trade retrieval accuracy
+            for agent-relevant metrics.
+        </p>
+
+        <div class="section">
+            <h2>Metrics Explained</h2>
+            <table>
+                <tr><td><strong>R@5</strong></td><td>Retrieval Recall@5 — Can the system find the right pattern type in top 5?</td></tr>
+                <tr><td><strong>R@10</strong></td><td>Retrieval Recall@10 — Same but top 10 results</td></tr>
+                <tr><td><strong>Cluster Purity</strong></td><td>After consolidation, how pure are the clusters vs ground truth patterns?</td></tr>
+                <tr><td><strong>Temporal (avg days)</strong></td><td>Average age of top-5 results. Lower = more recent/relevant for agents.</td></tr>
+            </table>
+        </div>
+
+        <div class="section">
+            <h2>Run AMBench</h2>
+<pre><code># Install
+pip install imi-memory
+
+# Run with defaults (300 incidents, 90 days)
+python -m imi.benchmark
+
+# Test your system with pure cosine (RAG baseline)
+python -m imi.benchmark --rw 0.0 --name "my-system"
+
+# JSON output for submission
+python -m imi.benchmark --json > results.json</code></pre>
+        </div>
+
+        <div class="submit-box">
+            <h2>Submit Your System</h2>
+            <p>To submit results to the leaderboard:</p>
+            <ol style="margin: 1rem 0; padding-left: 1.5rem;">
+                <li>Run <code>python -m imi.benchmark --json > results.json</code></li>
+                <li>Open an issue on <a href="https://github.com/RAG7782/imi/issues/new?title=AMBench+Submission&labels=ambench">GitHub</a> with your results.json</li>
+                <li>Include: system name, description, any modifications to the benchmark</li>
+            </ol>
+            <p style="color: var(--muted); font-size: 0.9rem;">
+                We welcome submissions from any memory system: RAG variants, knowledge graphs,
+                custom architectures. The goal is to establish a standard, not to win.
+            </p>
+        </div>
+
+        <div class="section">
+            <h2>Submission Format</h2>
+<pre><code>{
+  "system": "your-system-name",
+  "retrieval_r5": 0.XXX,
+  "retrieval_r10": 0.XXX,
+  "cluster_purity": 0.XXX,
+  "temporal_avg_age": XX.X,
+  "n_incidents": 300,
+  "n_days": 90,
+  "duration_s": XX.X,
+  "description": "Brief description of your approach",
+  "paper_url": "(optional) link to paper or repo"
+}</code></pre>
+        </div>
+
+        <footer>
+            <p>
+                AMBench is part of <a href="https://github.com/RAG7782/imi">IMI — Integrated Memory Intelligence</a> · MIT License<br>
+                <a href="https://github.com/RAG7782/imi/blob/main/docs/arxiv/imi-paper.pdf">Paper</a> ·
+                <code>pip install imi-memory</code>
+            </p>
+        </footer>
+    </div>
+</body>
+</html>

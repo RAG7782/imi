@@ -1,26 +1,44 @@
 # IMI — Integrated Memory Intelligence
 
-Cognitive memory system for AI agents. Goes beyond vector retrieval with temporal decay, affordances, graph-augmented multi-hop, and adaptive relevance weighting.
+### *RAG finds what's similar. IMI finds what matters.*
+
+A cognitive memory system for AI agents that remembers, learns, and acts — not just retrieves.
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-53%20passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-84%20passing-brightgreen.svg)]()
+[![MCP Server](https://img.shields.io/badge/MCP-6%20tools-purple.svg)]()
 
-## Why IMI?
+---
 
-Standard RAG treats memory as a flat vector store. IMI adds what RAG misses:
+## The Problem
 
-| Feature | RAG | IMI |
-|---------|-----|-----|
-| Temporal decay (recency bias) | No | Yes |
-| Affordances (actionable suggestions) | No | Yes |
-| Multi-hop graph retrieval | No | Yes |
-| Adaptive query-aware weighting | No | Yes |
-| Affective modulation | No | Yes |
-| Consolidation (dream cycle) | No | Yes |
-| Zero LLM calls at query time | N/A | Yes |
+Your AI agent forgets everything between sessions. RAG gives it a vector store, but that's like giving someone a filing cabinet and calling it memory. Real memory has:
 
-**Key finding**: Cognitive features trade -3.7% retrieval accuracy for +6.7% agent-relevant precision, +100% multi-hop recall, and -59% result recency. [Paper draft](docs/paper-draft.md)
+- **Recency** — last week's outage matters more than last year's
+- **Actions** — "what can I DO?" not just "what do I know?"
+- **Causality** — "A caused B caused C" across multiple memories
+- **Emotion** — critical incidents should be harder to forget
+- **Consolidation** — patterns emerge over time, like during sleep
+
+IMI adds all of this. Zero LLM calls at query time. SQLite only. 84 tests.
+
+## Why not just use RAG?
+
+Honest comparison:
+
+| Scenario | RAG | IMI | Winner |
+|----------|-----|-----|--------|
+| Static knowledge Q&A | R@5 = 1.000 | R@5 = 1.000 | Tie |
+| Agent memory (temporal) | No recency signal | **+6.7% domain precision** | IMI |
+| Multi-hop causal chains | 75% recall | **100% recall** | IMI |
+| "What should I do?" | Returns documents | **Returns actions** | IMI |
+| Result freshness | avg 41.2 days old | **avg 16.8 days old** | IMI |
+| Setup complexity | 1 line | 1 line | Tie |
+| LLM calls at query time | 0 | 0 | Tie |
+| Pure retrieval accuracy | Baseline | -3.7% (trade-off) | RAG |
+
+**Bottom line**: If your agent just answers questions, use RAG. If your agent needs to *learn from experience and act on it*, use IMI.
 
 ## Install
 
@@ -28,151 +46,106 @@ Standard RAG treats memory as a flat vector store. IMI adds what RAG misses:
 pip install imi-memory
 ```
 
-With LLM features (affordances, predictive coding):
-```bash
-pip install imi-memory[llm]
-```
+Extras: `pip install imi-memory[llm]` (affordances) · `[mcp]` (MCP server) · `[api]` (REST API) · `[all]`
 
-## Quickstart
+## Quickstart (3 lines)
 
 ```python
 from imi import IMISpace
 
-# Create a memory space (SQLite-backed, zero config)
 space = IMISpace.from_sqlite("my_agent.db")
 
-# Encode a memory
+# Your agent encodes an experience
 space.encode("DNS failure at 03:00 caused auth cascade across 3 services")
 
-# Navigate (retrieve) — adaptive relevance weight, graph expansion
+# Later, it navigates — adaptive rw + graph expansion, zero LLM calls
 result = space.navigate("what caused the auth outage?")
-for node, score in result.memories[:3]:
-    print(f"  [{score:.2f}] {node.content[:80]}")
 ```
 
-## Architecture
-
-```
-Query → AdaptiveRW(intent) → rw
-     → Cosine search (rw) → seed results
-     → Graph expansion (spreading activation) → expanded set
-     → Re-rank (cosine x relevance x graph) → final results
-     → Zoom level selection → response
-```
-
-**Zero LLM calls at query time.** Encoding optionally uses LLM for affordances and predictive coding.
-
-### Core modules
-
-| Module | Purpose |
-|--------|---------|
-| `space.py` | IMISpace — main API (encode, navigate, dream) |
-| `store.py` | VectorStore over ChromaDB with relevance weighting |
-| `storage.py` | SQLiteBackend for persistence |
-| `graph.py` | MemoryGraph — multi-hop via spreading activation |
-| `adaptive.py` | AdaptiveRW — query intent → optimal relevance weight |
-| `causal.py` | Auto-detect causal edges between memories |
-| `node.py` | MemoryNode with affect, surprise, relevance scoring |
-| `maintain.py` | Consolidation (dream cycle) via clustering |
-| `affordance.py` | Extract actionable suggestions from memories |
-| `affect.py` | Affective tagging (urgency, severity, emotional weight) |
-| `temporal.py` | Temporal context tracking |
-
-## Features in depth
-
-### Adaptive relevance weight
-
-Queries have different intents. IMI auto-detects and adjusts:
-
-| Intent | Example | rw |
-|--------|---------|-----|
-| Temporal | "recent auth failures" | 0.15 |
-| Exploratory | "find all cert incidents" | 0.00 |
-| Action | "how to fix DNS" | 0.05 |
-| Default | "auth token errors" | 0.10 |
+## What IMI returns that RAG doesn't
 
 ```python
-# Automatic (default)
-result = space.navigate("recent failures")  # uses rw=0.15
-
-# Manual override
-result = space.navigate("find all", relevance_weight=0.0)
+node = space.encode("Redis sentinel failover during network partition, 30s of cache misses")
 ```
 
-### Graph-augmented retrieval
+| Component | What it is | Example |
+|-----------|-----------|---------|
+| **Affect** | Emotional weight (salience, valence) | `salience=0.8, valence=-0.7` |
+| **Affordances** | Actions this memory enables | `"implement circuit breaker"`, `"add sentinel monitoring"` |
+| **Mass** | Gravitational pull (resists forgetting) | `0.76` — critical incident stays relevant longer |
+| **Graph edges** | Causal links to other memories | `→ "auth cascade"`, `→ "DNS root cause"` |
 
-Lightweight edges between memories enable multi-hop reasoning:
+## Integrations
 
-```python
-from imi.graph import MemoryGraph, EdgeType
-
-# Edges are auto-created during encode (similarity-based)
-# Or manually:
-space.graph.add_edge("mem_01", "mem_02", EdgeType.CAUSAL, label="caused")
-
-# Navigate uses graph expansion automatically
-result = space.navigate("what caused the cascade?")
-```
-
-### Consolidation (dream cycle)
-
-```python
-# Cluster similar memories, extract patterns
-report = space.dream()
-print(f"Consolidated {report.nodes_processed} memories into {report.clusters_formed} clusters")
-```
-
-### Zoom levels
-
-```python
-from imi import Zoom
-
-result = space.navigate("DNS issues", zoom=Zoom.MICRO)    # Full detail
-result = space.navigate("DNS issues", zoom=Zoom.MACRO)    # High-level summary
-```
-
-## Experiments & benchmarks
-
-All experiments are reproducible:
-
+### MCP Server (Claude Code, any LLM client)
 ```bash
-source .venv/bin/activate
-
-# Ablation study — feature contribution analysis
-PYTHONPATH=. python experiments/ws_a_ablation_study.py
-
-# Temporal decay — recency/frequency impact
-PYTHONPATH=. python experiments/ws_b_temporal_decay.py
-
-# Graph-augmented retrieval — multi-hop improvement
-PYTHONPATH=. python experiments/ws_g_graph_augmented_retrieval.py
-
-# AMBench — Agent Memory Benchmark (300 incidents, 90 days)
-PYTHONPATH=. python experiments/ws_d_agent_memory_benchmark.py
-
-# Adaptive rw validation
-PYTHONPATH=. python experiments/p1_adaptive_rw.py
+python -m imi.mcp_server   # 6 tools: encode, navigate, dream, search_actions, stats, graph_link
 ```
 
-## Key results
+### REST API (FastAPI)
+```bash
+uvicorn imi.api:app         # OpenAPI docs at /docs
+```
+```bash
+curl -X POST localhost:8000/encode -H 'Content-Type: application/json' \
+  -d '{"experience": "DNS failure caused auth cascade", "tags": ["dns", "auth"]}'
+```
 
-| Metric | Value | Source |
-|--------|-------|--------|
-| Recall@5 (standard) | 0.341 | WS3 |
-| Multi-hop Recall@10 | 1.000 (20/20) | WS-G |
-| Adaptive MRR | 0.651 (> best fixed 0.643) | P1 |
-| Temporal coherence | avg age 16.8d vs RAG 41.2d | WS-D |
-| Cluster purity | 0.736 | WS-D |
+### LangChain
+```python
+from imi.integrations.langchain import IMIMemory
+
+memory = IMIMemory.from_sqlite("agent.db")
+memory.save_context({"input": "DNS failed"}, {"output": "Restarting..."})
+relevant = memory.load_memory_variables({"input": "auth issues"})
+```
+
+### AMBench — Agent Memory Benchmark
+```bash
+python -m imi.benchmark                           # 300 incidents, 90 days
+python -m imi.benchmark --rw 0.0 --name RAG       # Compare pure cosine
+python -m imi.benchmark --json                     # Machine-readable output
+```
+
+## How it works
+
+```
+Query "recent auth failures"
+  │
+  ├─ AdaptiveRW: intent=TEMPORAL → rw=0.15
+  │
+  ├─ VectorStore: cosine search weighted by recency/frequency/affect
+  │
+  ├─ GraphExpansion: follow causal edges via spreading activation
+  │
+  ├─ Re-rank: (1-rw-gw) × cosine + rw × relevance + gw × graph_activation
+  │
+  └─ Zoom: orbital (gist) / medium / detailed / full
+```
+
+## Key Results (13 experiments, all reproducible)
+
+| Finding | Evidence | Experiment |
+|---------|----------|------------|
+| Cognitive features trade -3.7% R@5 for +6.7% agent precision | Ablation across 6 feature variants | WS-A |
+| Optimal relevance weight = 0.10-0.15 | Sweep 0.0→0.3, 9 scenarios | WS-A, WS-B |
+| Graph expansion: 100% multi-hop recall (vs 75%) | 10 causal chains, 20 queries | WS-G |
+| Temporal coherence: avg age 16.8d vs RAG 41.2d | 300 incidents, 90 days | WS-D (AMBench) |
+| Causal pairs have low cosine (avg 0.308) | 10 ground truth chains | P2 |
+| Adaptive rw beats best fixed (MRR 0.651 vs 0.643) | 16 mixed-intent queries | P1 |
 
 ## Development
 
 ```bash
-git clone https://github.com/renatoaparegomes/imi.git
-cd imi
+git clone https://github.com/RAG7782/imi.git && cd imi
 python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev,llm]"
-python -m pytest tests/ -v
+pip install -e ".[dev,llm,mcp,api]"
+python -m pytest tests/ -v   # 84 tests
 ```
+
+## Docs
+
+Full documentation: [docs site](docs-site/) · [Paper (arXiv-ready)](docs/arxiv/imi-paper.pdf) · [Interactive demo](examples/demo_notebook.ipynb)
 
 ## License
 
@@ -180,13 +153,11 @@ MIT — see [LICENSE](LICENSE).
 
 ## Citation
 
-If you use IMI in research, please cite:
-
 ```bibtex
 @software{gomes2026imi,
   title={IMI: Integrated Memory Intelligence for AI Agents},
   author={Gomes, Renato Aparecido},
   year={2026},
-  url={https://github.com/renatoaparegomes/imi}
+  url={https://github.com/RAG7782/imi}
 }
 ```

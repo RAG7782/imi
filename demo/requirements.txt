@@ -1,0 +1,2 @@
+imi-memory>=0.2.0
+gradio>=5.0.0
