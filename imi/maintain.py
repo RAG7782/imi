@@ -76,7 +76,16 @@ class MaintenanceReport:
     consolidated: int = 0           # patterns created/strengthened
     pruned: int = 0                 # low-relevance nodes removed from fast store
     patterns_total: int = 0
+    nodes_processed: int = 0        # total episodic nodes examined
     duration_ms: float = 0
+
+    @property
+    def clusters_formed(self) -> int:
+        return self.consolidated
+
+    @property
+    def patterns_extracted(self) -> int:
+        return self.consolidated
 
     def __str__(self) -> str:
         return (
@@ -288,5 +297,6 @@ def run_maintenance(
         consolidated=consolidated,
         pruned=pruned,
         patterns_total=len(semantic.nodes),
+        nodes_processed=len(episodic.nodes),
         duration_ms=duration_ms,
     )
