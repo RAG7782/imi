@@ -55,6 +55,7 @@ class NavigateRequest(BaseModel):
     zoom: str = Field("medium", description="Resolution: orbital, medium, detailed, full")
     context: str = Field("", description="Additional search context")
     relevance_weight: float | None = Field(None, description="Override adaptive weight (None=auto)")
+    positional_optimize: bool = Field(True, description="Reorder results for primacy-recency (best items at start+end)")
 
 
 class MemoryHit(BaseModel):
@@ -202,6 +203,7 @@ def navigate(req: NavigateRequest):
         top_k=req.top_k,
         context=req.context,
         relevance_weight=req.relevance_weight,
+        positional_optimize=req.positional_optimize,
     )
     rw_used, intent_obj = space.adaptive_rw.classify_with_info(req.query)
 

@@ -23,6 +23,7 @@ from imi.affordance import Affordance, extract_affordances
 from imi.anchors import Anchor, ConfidenceReport, extract_anchors, compute_confidence
 from imi.causal import auto_link_causal
 from imi.core import compress_seed, remember, summarize, get_llm
+from imi.positional import positional_reorder
 from imi.embedder import Embedder, SentenceTransformerEmbedder
 from imi.events import NAVIGATE_ACCESS, MemoryEvent
 from imi.graph import MemoryGraph
@@ -241,11 +242,18 @@ class IMISpace:
         reconsolidate_on_access: bool = False,
         use_graph: bool = True,
         graph_weight: float = 0.2,
+        positional_optimize: bool = True,
     ) -> NavigationResult:
         """Navigate the memory space with full v3 features.
 
         If relevance_weight is None, uses AdaptiveRW to select optimal rw
         based on query intent (temporal → 0.15, exploratory → 0.0, etc.).
+
+        If positional_optimize is True (default), reorders results using the
+        primacy-recency pattern from "Lost in the Middle" (Liu et al. 2023)
+        so the highest-relevance memories sit at the START and END of the
+        list — where LLM attention is strongest — and lower-relevance items
+        occupy the center.
         """
         if isinstance(zoom, str):
             zoom = Zoom(zoom)
@@ -346,6 +354,10 @@ class IMISpace:
 
             memories.append(mem_entry)
             total_tokens += tok_est
+
+        # Positional optimization: primacy-recency reorder
+        if positional_optimize and len(memories) > 2:
+            memories = positional_reorder(memories)
 
         # TDA
         tda = None

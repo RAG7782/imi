@@ -111,6 +111,7 @@ def imi_navigate(
     zoom: str = "medium",
     context: str = "",
     relevance_weight: float = -1,
+    positional_optimize: bool = True,
 ) -> str:
     """Search memories by query. Uses adaptive relevance weighting and graph expansion.
 
@@ -120,6 +121,7 @@ def imi_navigate(
         zoom: Resolution level — "orbital" (gist), "medium" (default), "detailed", "full"
         context: Additional context to refine search
         relevance_weight: Override adaptive weight (0.0=pure cosine, 0.15=recency bias, -1=auto)
+        positional_optimize: Reorder results for primacy-recency (best items at edges). Default True.
 
     Returns:
         JSON with ranked memories, scores, and detected query intent.
@@ -133,6 +135,7 @@ def imi_navigate(
         top_k=top_k,
         context=context,
         relevance_weight=rw,
+        positional_optimize=positional_optimize,
     )
 
     # Detect intent for transparency
