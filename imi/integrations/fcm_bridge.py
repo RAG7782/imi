@@ -31,6 +31,7 @@ import json
 import os
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -130,7 +131,7 @@ class FCMBridge:
         node_id = getattr(node, "id", "")
 
         event = {
-            "id": uuid.uuid4().hex[:16],
+            "id": str(uuid.uuid4()),
             "timestamp": _iso_now(),
             "source": self.source,
             "type": "memory_created",
@@ -158,7 +159,7 @@ class FCMBridge:
     ) -> str | None:
         """Emit a session event (session_start, session_end, session_checkpoint)."""
         event = {
-            "id": uuid.uuid4().hex[:16],
+            "id": str(uuid.uuid4()),
             "timestamp": _iso_now(),
             "source": self.source,
             "type": event_type,
@@ -248,4 +249,4 @@ class FCMBridge:
 
 
 def _iso_now() -> str:
-    return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()) + f".{int(time.time() * 1000) % 1000:03d}Z"
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
