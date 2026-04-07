@@ -3,7 +3,12 @@
 Emits MemoryEvents to ~/.fcm/events/ after IMI encodes.
 Reads ClawVault events from ~/.fcm/events/ for IMI ingestion.
 
-Phase 0-C of Federated Cognitive Memory.
+Phase 0-D of Federated Cognitive Memory.
+
+Safety:
+    - Loop prevention: events tagged 'federated' are never re-emitted
+    - Trust gradient: IMI source trust maps to salience floors
+    - Dedup: consumed events tracked to prevent re-processing
 
 Usage:
     from imi.integrations.fcm_bridge import FCMBridge
@@ -13,10 +18,11 @@ Usage:
     # After imi.encode():
     bridge.emit_encode(node)
 
-    # Poll for ClawVault events:
+    # Poll for ClawVault events (with loop guard):
     events = bridge.poll_clawvault_events()
     for event in events:
         space.encode(event["content"], tags=event["tags"], source="clawvault")
+        bridge.mark_consumed(event["_filepath"])
 """
 
 from __future__ import annotations
@@ -32,12 +38,33 @@ FCM_DIR = Path.home() / ".fcm"
 FCM_EVENTS_DIR = FCM_DIR / "events"
 FCM_PROCESSED_DIR = FCM_DIR / "processed"
 
+# Trust gradient: IMI source → salience floor
+# Memories from less-trusted sources get lower salience floors,
+# making them more likely to be filtered by the membrane.
+TRUST_GRADIENT = {
+    "self": 0.9,      # This agent's own memories — highest trust
+    "trusted": 0.7,   # Verified peer agents
+    "peer": 0.5,      # Known but unverified agents
+    "external": 0.3,  # Unknown external sources
+}
+
+# Tags that indicate an event was already federated (loop breakers)
+FEDERATION_TAGS = frozenset({"federated", "from-imi", "from-clawvault", "from-external"})
+
 
 class FCMBridge:
-    """Bridge between IMI and FCM event bus."""
+    """Bridge between IMI and FCM event bus.
 
-    def __init__(self, source: str = "imi"):
+    Safety invariants:
+        1. Never emit events that carry federation tags (loop prevention)
+        2. Never consume events that originated from this source (echo prevention)
+        3. Trust gradient adjusts salience floor per source trust level
+    """
+
+    def __init__(self, source: str = "imi", trust_level: str = "self"):
         self.source = source
+        self.trust_level = trust_level
+        self._consumed_ids: set[str] = set()
         self._ensure_dirs()
 
     def _ensure_dirs(self) -> None:
@@ -59,8 +86,18 @@ class FCMBridge:
             extra_tags: Additional tags beyond node.tags
 
         Returns:
-            Event filepath if written, None if skipped
+            Event filepath if written, None if skipped/blocked
+
+        Safety:
+            - Skips nodes that originated from federation (source == 'clawvault')
+            - Skips nodes with federation tags (loop prevention)
+            - Applies trust gradient floor to salience
         """
+        # LOOP GUARD: skip nodes that came from federation
+        node_source = getattr(node, "source", "")
+        if node_source in ("clawvault", "external"):
+            return None
+
         # Extract from node
         content = getattr(node, "original", "") or getattr(node, "seed", "")
         if not content:
@@ -69,6 +106,10 @@ class FCMBridge:
         tags = list(getattr(node, "tags", []))
         if extra_tags:
             tags.extend(extra_tags)
+
+        # LOOP GUARD: skip if any tag indicates prior federation
+        if FEDERATION_TAGS & set(t.lower() for t in tags):
+            return None
 
         # Compute salience from node affect/mass
         if salience is None:
@@ -80,6 +121,10 @@ class FCMBridge:
                 salience = affect.salience
             else:
                 salience = 0.6
+
+        # TRUST GRADIENT: apply floor based on trust level
+        floor = TRUST_GRADIENT.get(self.trust_level, 0.3)
+        salience = max(salience, floor)
 
         title = getattr(node, "summary_orbital", "") or content[:80]
         node_id = getattr(node, "id", "")
@@ -96,6 +141,7 @@ class FCMBridge:
             "metadata": {
                 "imi_node_id": node_id,
                 "imi_seed": getattr(node, "seed", ""),
+                "trust_level": self.trust_level,
             },
         }
 
@@ -127,9 +173,12 @@ class FCMBridge:
     def poll_clawvault_events(self, max_events: int = 50) -> list[dict[str, Any]]:
         """Read pending ClawVault events from FCM bus.
 
-        Returns events where source == 'clawvault'.
-        Does NOT move them to processed — the watcher.ts handles that.
-        This is for direct polling when watcher isn't running.
+        Returns events where source == 'clawvault' that haven't been consumed yet.
+
+        Safety:
+            - Skips events from own source (echo prevention)
+            - Skips already-consumed events (dedup)
+            - Skips events with federation tags (loop prevention)
         """
         if not FCM_EVENTS_DIR.exists():
             return []
@@ -142,20 +191,47 @@ class FCMBridge:
                 continue
             try:
                 data = json.loads(f.read_text("utf-8"))
-                if data.get("source") == "clawvault":
-                    data["_filepath"] = str(f)
-                    events.append(data)
             except (json.JSONDecodeError, OSError):
                 continue
+
+            # Echo prevention: skip events from our own source
+            if data.get("source") == self.source:
+                continue
+
+            # Only accept ClawVault events
+            if data.get("source") != "clawvault":
+                continue
+
+            # Dedup: skip already consumed
+            event_id = data.get("id", "")
+            if event_id in self._consumed_ids:
+                continue
+
+            # Loop prevention: skip events that were already federated
+            event_tags = set(t.lower() for t in data.get("tags", []))
+            if FEDERATION_TAGS & event_tags:
+                continue
+
+            data["_filepath"] = str(f)
+            events.append(data)
 
         return events
 
     def mark_consumed(self, filepath: str) -> None:
-        """Move a consumed event to processed dir."""
+        """Move a consumed event to processed dir and track its ID."""
         src = Path(filepath)
-        if src.exists():
-            dest = FCM_PROCESSED_DIR / src.name
-            src.rename(dest)
+        if not src.exists():
+            return
+
+        # Track ID for dedup
+        try:
+            data = json.loads(src.read_text("utf-8"))
+            self._consumed_ids.add(data.get("id", ""))
+        except (json.JSONDecodeError, OSError):
+            pass
+
+        dest = FCM_PROCESSED_DIR / src.name
+        src.rename(dest)
 
     def _write_event(self, event: dict[str, Any]) -> str:
         """Atomic write to FCM events dir."""
