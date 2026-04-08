@@ -131,7 +131,8 @@ Examples:
             print(f"Running LongMemEval: {args.incidents} incidents, {args.days} days")
             print("=" * 60)
 
-        bench = LongMemEval(n_incidents=args.incidents, n_days=args.days, seed=args.seed)
+        longmem_days = max(args.days, 180)  # LongMemEval needs ≥180 days for 3 time buckets
+        bench = LongMemEval(n_incidents=args.incidents, n_days=longmem_days, seed=args.seed)
         results = bench.run(system_name=args.name, relevance_weight=args.rw)
 
         if args.json:
