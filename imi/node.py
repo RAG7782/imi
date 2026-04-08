@@ -73,6 +73,15 @@ class MemoryNode:
     reconsolidation_count: int = 0
     last_reconsolidated: float = 0.0
 
+    # L0-L3 Tiering (VIEW layer)
+    tier: int = 3  # Default: L3 (deep). 0=identity, 1=hot facts, 2=filtered, 3=deep
+    tier_updated_at: float = 0.0
+
+    # SDE-AAAK Dialect (metadata layer)
+    sde_tag: str = ""       # Rendered SDE-AAAK tag string
+    ds_d: float = 0.0       # Distributional semiotic density score (0-1)
+    entities: list[str] = field(default_factory=list)  # 3-letter entity codes
+
     def touch(self) -> None:
         """Record an access — updates recency and frequency."""
         self.last_accessed = time.time()
@@ -117,6 +126,11 @@ class MemoryNode:
             "source": self.source,
             "reconsolidation_count": self.reconsolidation_count,
             "last_reconsolidated": self.last_reconsolidated,
+            "tier": self.tier,
+            "tier_updated_at": self.tier_updated_at,
+            "sde_tag": self.sde_tag,
+            "ds_d": self.ds_d,
+            "entities": self.entities,
         }
         if self.embedding is not None:
             d["embedding"] = self.embedding.tolist()

@@ -65,11 +65,22 @@ def compress_seed(
     *,
     max_tokens: int = 80,
     llm: LLMAdapter | None = None,
+    domain: str = "",
 ) -> str:
-    """Compress an experience into a seed — the minimal reconstruction key."""
+    """Compress an experience into a seed — the minimal reconstruction key.
+
+    When domain is provided, applies SDE Densify operation: the compression
+    prompt instructs the LLM to prefer high-density domain terms over generic
+    ones, increasing distributional semiotic density (DS-d) of the seed.
+    """
+    from .dialect import densify_prompt
+
     llm = llm or get_llm()
+    system = COMPRESS_SYSTEM.format(max_tokens=max_tokens)
+    if domain:
+        system += densify_prompt(domain)
     return llm.generate(
-        system=COMPRESS_SYSTEM.format(max_tokens=max_tokens),
+        system=system,
         prompt=experience,
         max_tokens=max_tokens * 2,  # allow some headroom
     )

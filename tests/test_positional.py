@@ -5,6 +5,8 @@ LLMs lose information in the middle of the context window.
 Reorder so highest-relevance items sit at start + end.
 """
 
+import os
+
 import pytest
 
 from imi.positional import positional_reorder
@@ -92,6 +94,10 @@ class TestPositionalReorder:
 # ── Integration tests with IMISpace.navigate ──────────────────────────────
 
 
+@pytest.mark.skipif(
+    not os.environ.get("ANTHROPIC_API_KEY"),
+    reason="Integration tests require ANTHROPIC_API_KEY (LLM calls for encode)"
+)
 class TestNavigatePositionalIntegration:
     """Test that navigate actually applies positional reordering."""
 

@@ -37,6 +37,8 @@ from imi.store import VectorStore
 from imi.surprise import SurpriseResult, encode_with_surprise, reconstruct_from_surprise
 from imi.tda import TDAReport, AnnealingState, compute_persistent_homology, compute_space_energy
 from imi.temporal import TemporalContext, TemporalIndex
+from imi.tiering import L0Identity, L1HotFacts, generate_l1, apply_tiering, get_tier_stats
+from imi.positional import positional_reorder
 
 
 class Zoom(str, Enum):
@@ -124,6 +126,11 @@ class IMISpace:
             self.semantic.backend = self.backend
             self.semantic.store_name = "semantic"
 
+        # L0-L3 Tiering (VIEW layer)
+        self._l0: L0Identity = L0Identity.load()
+        self._l1_cache: L1HotFacts | None = None
+        self._l1_domain: str | None = None
+
     def _llm(self) -> LLMAdapter:
         return self.llm or get_llm()
 
@@ -138,6 +145,7 @@ class IMISpace:
         context_hint: str = "",
         use_predictive_coding: bool = False,
         timestamp: float | None = None,
+        domain: str = "",
     ) -> MemoryNode:
         """Transform an experience into a memory node.
 
@@ -159,8 +167,8 @@ class IMISpace:
         if use_predictive_coding and context_hint:
             surprise = encode_with_surprise(experience, context_hint, llm)
 
-        # 3. Compress to seed
-        seed = compress_seed(experience, llm=llm)
+        # 3. Compress to seed (with SDE Densify if domain provided)
+        seed = compress_seed(experience, llm=llm, domain=domain)
 
         # 4. Zoom summaries
         summary_orbital = summarize(experience, max_tokens=10, llm=llm)
@@ -207,6 +215,16 @@ class IMISpace:
             timestamp=timestamp or time.time(),
         )
         node.temporal = temporal
+
+        # 9b. SDE-AAAK Dialect: entities, DS-d score, tag
+        from .dialect import extract_entities, compute_ds_d, format_tag
+        node.entities = extract_entities(experience)
+        try:
+            node.ds_d = compute_ds_d(seed, self.embedder)
+        except Exception:
+            node.ds_d = 0.0  # Graceful degradation
+        sde = format_tag(node, ds_d=node.ds_d, domain=domain)
+        node.sde_tag = sde.render()
 
         # Store anchors
         if anchors:
@@ -378,6 +396,10 @@ class IMISpace:
                 },
             ))
 
+        # Positional optimization: primacy-recency reorder (Liu et al. 2023)
+        if positional_optimize and len(memories) > 2:
+            memories = positional_reorder(memories)
+
         if self.persist_dir or self.backend:
             self.save()
 
@@ -520,6 +542,9 @@ class IMISpace:
 
         if self.persist_dir or self.backend:
             self.save()
+
+        # Refresh tiers after consolidation
+        self.refresh_tiers()
 
         return report
 
@@ -682,4 +707,83 @@ class IMISpace:
             result["avg_mass"] = np.mean([n.mass for n in ep_nodes])
             result["avg_salience"] = np.mean([n.affect.salience for n in ep_nodes])
 
+        # L0-L3 Tiering info
+        result["tiers"] = self.tier_stats()
+        result["l0_tokens"] = self._l0.token_estimate()
+        result["l1_tokens"] = self._l1_cache.token_estimate() if self._l1_cache else 0
+
         return result
+
+    # ── L0-L3 Tiering Methods ─────────────────────────────
+
+    def get_l0(self) -> str:
+        """Get L0 identity text (~50 tokens). Always available."""
+        return self._l0.render()
+
+    def get_l1(
+        self,
+        *,
+        domain_filter: str | None = None,
+        channel_weights: dict[str, float] | None = None,
+        force_refresh: bool = False,
+    ) -> str:
+        """Get L1 hot facts text (~120 tokens). Auto-cached, refreshes on domain change.
+
+        Sinergia 3: Call with new domain_filter when PRIORITY_SHIFT received.
+        """
+        needs_refresh = (
+            force_refresh
+            or self._l1_cache is None
+            or domain_filter != self._l1_domain
+            or (time.time() - (self._l1_cache.generated_at if self._l1_cache else 0)) > 300  # 5 min TTL
+        )
+
+        if needs_refresh:
+            all_nodes = list(self.episodic.nodes) + list(self.semantic.nodes)
+            self._l1_cache = generate_l1(
+                all_nodes,
+                domain_filter=domain_filter,
+                channel_weights=channel_weights,
+            )
+            self._l1_domain = domain_filter
+
+        return self._l1_cache.render()
+
+    def get_l0_l1(
+        self,
+        *,
+        domain_filter: str | None = None,
+        channel_weights: dict[str, float] | None = None,
+    ) -> str:
+        """Get L0 + L1 combined (~170-200 tokens). Primary wake-up payload."""
+        l0 = self.get_l0()
+        l1 = self.get_l1(domain_filter=domain_filter, channel_weights=channel_weights)
+        return f"{l0}\n---\n{l1}"
+
+    def refresh_tiers(
+        self,
+        *,
+        channel_weights: dict[str, float] | None = None,
+    ) -> dict[str, int]:
+        """Recompute tiers for all nodes. Returns changes made.
+
+        Called after dream() or on PRIORITY_SHIFT (Sinergia 3).
+        """
+        all_nodes = list(self.episodic.nodes) + list(self.semantic.nodes)
+        changes = apply_tiering(all_nodes, channel_weights=channel_weights)
+
+        # Apply changes
+        for node in all_nodes:
+            if node.id in changes:
+                node.tier = changes[node.id]
+                node.tier_updated_at = time.time()
+
+        # Invalidate L1 cache
+        self._l1_cache = None
+
+        return changes
+
+    def tier_stats(self) -> dict:
+        """Get tier distribution for all nodes."""
+        all_nodes = list(self.episodic.nodes) + list(self.semantic.nodes)
+        return get_tier_stats(all_nodes)

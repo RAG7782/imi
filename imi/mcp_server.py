@@ -121,7 +121,7 @@ def imi_navigate(
         zoom: Resolution level — "orbital" (gist), "medium" (default), "detailed", "full"
         context: Additional context to refine search
         relevance_weight: Override adaptive weight (0.0=pure cosine, 0.15=recency bias, -1=auto)
-        positional_optimize: Reorder results for primacy-recency (best items at edges). Default True.
+        positional_optimize: Reorder results for primacy-recency (best at edges). Default True.
 
     Returns:
         JSON with ranked memories, scores, and detected query intent.
@@ -254,6 +254,10 @@ def imi_stats() -> str:
             "energy": round(space.annealing.energy_history[-1], 4) if space.annealing.energy_history else None,
         },
         "persist_dir": str(space.persist_dir) if space.persist_dir else None,
+        # L0-L3 Tiering
+        "tiers": space.tier_stats(),
+        "l0_l1_preview": space.get_l0_l1(),
+        "l0_l1_tokens": len(space.get_l0_l1()) // 4,
     }
     return json.dumps(result, ensure_ascii=False, indent=2)
 
