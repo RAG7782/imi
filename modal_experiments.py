@@ -15,6 +15,8 @@ Usage:
 Results are saved to /results/ volume and printed to stdout.
 """
 
+from __future__ import annotations
+
 import modal
 import json
 import time
@@ -56,8 +58,8 @@ results_volume = modal.Volume.from_name("imi-experiment-results", create_if_miss
 
 @app.function(
     image=imi_image,
-    timeout=600,
-    memory=2048,
+    timeout=1200,
+    memory=4096,
 )
 def l1_tuning_single(max_facts: int, n_incidents: int = 300, n_days: int = 90, seed: int = 42):
     """Run TieredRecall with a specific max_facts value."""
@@ -141,6 +143,62 @@ def run_l1_sweep():
     }
 
     with open("/results/l1_sweep_results.json", "w") as f:
+        json.dump(output, f, indent=2)
+    results_volume.commit()
+
+    return output
+
+
+@app.function(
+    image=imi_image,
+    volumes={"/results": results_volume},
+    timeout=1800,
+)
+def run_l1_sweep_at_scale(n_incidents: int = 1000, max_range: int = 30):
+    """Sweep max_facts at larger scale to find optimal L1 coverage.
+
+    Usage:
+        modal run modal_experiments.py::run_l1_sweep_at_scale
+    """
+    print("=" * 60)
+    print(f"L1 SWEEP @ SCALE — {n_incidents} incidents, max_facts 3→{max_range}")
+    print("=" * 60)
+
+    max_facts_values = list(range(3, max_range + 1))
+    n_list = [n_incidents] * len(max_facts_values)
+    results = []
+
+    for result in l1_tuning_single.map(max_facts_values, n_list):
+        results.append(result)
+        ratio = result["tier_ratio"]
+        status = "✓" if ratio >= 0.90 else "✗"
+        print(f"  max_facts={result['max_facts']:2d}  L1={result['l1_coverage']:.3f}  ratio={ratio:.3f} {status}")
+
+    results.sort(key=lambda r: r["tier_ratio"], reverse=True)
+
+    optimal = None
+    for r in sorted(results, key=lambda x: x["max_facts"]):
+        if r["tier_ratio"] >= 0.90:
+            optimal = r
+            break
+
+    print(f"\n--- RESULTS ---")
+    if optimal:
+        print(f"Optimal: max_facts={optimal['max_facts']} → tier_ratio={optimal['tier_ratio']:.3f}")
+    else:
+        best = results[0]
+        print(f"Target 0.90 not reached. Best: max_facts={best['max_facts']} → tier_ratio={best['tier_ratio']:.3f}")
+
+    output = {
+        "experiment": "l1_tuning_sweep_at_scale",
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "sweep_range": [3, max_range],
+        "n_incidents": n_incidents,
+        "optimal": optimal,
+        "all_results": sorted(results, key=lambda x: x["max_facts"]),
+    }
+
+    with open(f"/results/l1_sweep_{n_incidents}_results.json", "w") as f:
         json.dump(output, f, indent=2)
     results_volume.commit()
 
@@ -301,8 +359,8 @@ def run_sd_diverse():
 
 @app.function(
     image=imi_image,
-    timeout=1800,
-    memory=4096,
+    timeout=3600,
+    memory=8192,
     secrets=[modal.Secret.from_name("anthropic-api")],
 )
 def run_full_bench(n_incidents: int = 300, n_days: int = 180):
@@ -401,8 +459,8 @@ def run_all():
     sd_results = run_sd_diverse.remote()
     all_results["sd_diverse"] = sd_results
 
-    # Experiment 3: Full Bench
-    print("\n▸ Launching Full Benchmark Suite...")
+    # Experiment 3: Full Bench (default 300)
+    print("\n▸ Launching Full Benchmark Suite (300 incidents)...")
     bench_results = run_full_bench.remote()
     all_results["full_benchmark"] = bench_results
 
@@ -428,10 +486,133 @@ def run_all():
     return consolidated
 
 
+@app.function(
+    image=imi_image,
+    volumes={"/results": results_volume},
+    timeout=7200,
+)
+def run_scale_comparison():
+    """Run full benchmarks at 3 scales (300, 500, 1000) for paper-quality results.
+
+    Usage:
+        modal run modal_experiments.py::run_scale_comparison
+    """
+    print("╔" + "═" * 58 + "╗")
+    print("║  IMI SCALE COMPARISON — 300 / 500 / 1000 incidents        ║")
+    print("╚" + "═" * 58 + "╝")
+    print()
+
+    scales = [300, 500, 1000]
+
+    # Launch all 3 scales in parallel
+    handles = []
+    for n in scales:
+        print(f"▸ Launching scale {n} incidents...")
+        handles.append(run_full_bench.spawn(n_incidents=n, n_days=180))
+
+    # Collect results
+    scale_results = {}
+    for handle, n in zip(handles, scales):
+        result = handle.get()
+        scale_results[f"n{n}"] = result
+        print(f"\n✓ Scale {n} complete")
+
+        # Print summary per scale
+        for bench_name, bench_data in result.items():
+            key_metric = _extract_key_metric(bench_name, bench_data)
+            print(f"  {bench_name}: {key_metric}")
+
+    # Compute degradation analysis
+    degradation = {}
+    if "n300" in scale_results and "n1000" in scale_results:
+        for bench_name in scale_results["n300"]:
+            m300 = _extract_numeric_metric(bench_name, scale_results["n300"][bench_name])
+            m1000 = _extract_numeric_metric(bench_name, scale_results["n1000"][bench_name])
+            if m300 is not None and m1000 is not None and m300 > 0:
+                degradation[bench_name] = {
+                    "n300": m300,
+                    "n1000": m1000,
+                    "delta": m1000 - m300,
+                    "pct_change": (m1000 - m300) / m300 * 100,
+                }
+
+    consolidated = {
+        "meta": {
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "platform": "Modal",
+            "imi_version": "0.2.0+L0L3+SDE",
+            "experiment": "scale_comparison",
+            "scales": scales,
+        },
+        "results": scale_results,
+        "degradation_300_vs_1000": degradation,
+    }
+
+    with open("/results/scale_comparison_results.json", "w") as f:
+        json.dump(consolidated, f, indent=2)
+    results_volume.commit()
+
+    print("\n" + "=" * 60)
+    print("SCALE COMPARISON COMPLETE")
+    if degradation:
+        print("\nDegradation 300→1000:")
+        for bench, d in degradation.items():
+            print(f"  {bench}: {d['pct_change']:+.1f}%  ({d['n300']:.3f} → {d['n1000']:.3f})")
+    print("\nResults saved to modal volume: imi-experiment-results")
+    print("=" * 60)
+
+    return consolidated
+
+
+def _extract_key_metric(bench_name: str, data: dict) -> str:
+    """Extract the most important metric from a benchmark result for display."""
+    key_map = {
+        "ambench": ("retrieval_r5", "R@5"),
+        "tiered_recall": ("tier_ratio", "Ratio"),
+        "tiered_efficiency": ("pct_under_200", "Under200"),
+        "cross_session": ("retention_rate", "Retention"),
+        "sd_retrieval": ("sd_r5", "SD-R@5"),
+        "longmem_eval": ("overall_r5", "Overall"),
+        "federated_recall": ("federation_boost", "Boost"),
+    }
+    if bench_name in key_map:
+        field, label = key_map[bench_name]
+        val = data.get(field, "?")
+        return f"{label}={val}"
+    return str(data)[:60]
+
+
+def _extract_numeric_metric(bench_name: str, data: dict) -> float | None:
+    """Extract the primary numeric metric for degradation analysis."""
+    key_map = {
+        "ambench": "retrieval_r5",
+        "tiered_recall": "tier_ratio",
+        "cross_session": "retention_rate",
+        "sd_retrieval": "sd_r5",
+        "longmem_eval": "overall_r5",
+        "federated_recall": "federated_r5",
+    }
+    field = key_map.get(bench_name)
+    if field and field in data:
+        try:
+            return float(data[field])
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
 # ── Local entrypoint ──────────────────────────────────
 
 @app.local_entrypoint()
-def main():
-    """Run all experiments from local CLI."""
-    results = run_all.remote()
+def main(scale: bool = False):
+    """Run experiments from local CLI.
+
+    Usage:
+        modal run modal_experiments.py                  # Original 3 experiments (300 incidents)
+        modal run modal_experiments.py --scale          # Scale comparison (300/500/1000)
+    """
+    if scale:
+        results = run_scale_comparison.remote()
+    else:
+        results = run_all.remote()
     print(json.dumps(results, indent=2))

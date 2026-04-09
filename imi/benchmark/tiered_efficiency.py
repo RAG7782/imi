@@ -106,7 +106,7 @@ class TieredEfficiency:
             l0_tokens_list.append(l0_tok)
 
             # L1: generate hot facts
-            l1 = generate_l1(list(store.nodes), max_facts=7, max_affordances=3)
+            l1 = generate_l1(list(store.nodes), max_affordances=3)
             l1_tok = l1.token_estimate()
             l1_tokens_list.append(l1_tok)
             l0l1_tokens_list.append(l0_tok + l1_tok)

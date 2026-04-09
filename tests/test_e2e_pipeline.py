@@ -419,6 +419,8 @@ class TestFullPipeline:
     def test_empty_pipeline(self, fcm_dir, monkeypatch):
         """Pipeline works with no SYMBIONT signals (graceful degradation)."""
         monkeypatch.setattr("imi.symbiont_bridge.FCM_EVENTS_DIR", fcm_dir)
+        # Isolate from real ~/.imi/channel_weights.json cache
+        monkeypatch.setattr("tests.test_e2e_pipeline.read_channel_weights", lambda **kw: {})
 
         artifacts = get_mound_approved_artifacts()
         domain = check_priority_shift()

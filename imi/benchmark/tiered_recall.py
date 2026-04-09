@@ -113,7 +113,7 @@ class TieredRecall:
                 r5_l2 = recall_at_k(l2_patterns, target, k=5)
 
                 # L1: check if target pattern is in hot facts
-                l1 = generate_l1(list(store.nodes), max_facts=7)
+                l1 = generate_l1(list(store.nodes))
                 l1_tags = set()
                 for fact in l1.facts:
                     l1_tags.update(fact.get("tags", []))
