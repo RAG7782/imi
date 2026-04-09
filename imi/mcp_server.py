@@ -67,6 +67,7 @@ def imi_encode(
     tags: str = "",
     source: str = "",
     context_hint: str = "",
+    occurred_at: str = "",
 ) -> str:
     """Store a new memory in the IMI space.
 
@@ -75,19 +76,38 @@ def imi_encode(
         tags: Comma-separated tags for categorization (e.g., "dns,auth,incident")
         source: Where this memory came from (e.g., "slack", "terminal", "user")
         context_hint: Additional context for better encoding
+        occurred_at: ISO timestamp of when the event actually happened (e.g., "2026-04-07T14:30:00Z").
+                     Use this when recording events from a prior session that is being saved late.
+                     If empty, defaults to current time (event happened now).
 
     Returns:
         JSON with the memory node ID, summary, affect, and affordances.
     """
+    import time as _time
+    from datetime import datetime, timezone
+
     space = _get_space()
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else None
+
+    # Parse occurred_at into a float timestamp
+    event_timestamp = None
+    occurred_float = None
+    if occurred_at:
+        try:
+            dt = datetime.fromisoformat(occurred_at.replace("Z", "+00:00"))
+            event_timestamp = dt.timestamp()
+            occurred_float = event_timestamp
+        except ValueError:
+            pass  # Fall back to current time
 
     node = space.encode(
         experience,
         tags=tag_list,
         source=source,
         context_hint=context_hint,
+        timestamp=event_timestamp,
     )
+    node.occurred_at = occurred_float
 
     result = {
         "id": node.id,

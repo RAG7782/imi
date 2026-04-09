@@ -32,6 +32,7 @@ class MemoryNode:
     # Identity
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     created_at: float = field(default_factory=time.time)
+    occurred_at: float | None = None  # When the event actually happened (vs when it was recorded)
     last_accessed: float = field(default_factory=time.time)
     access_count: int = 0
 
@@ -82,6 +83,11 @@ class MemoryNode:
     ds_d: float = 0.0       # Distributional semiotic density score (0-1)
     entities: list[str] = field(default_factory=list)  # 3-letter entity codes
 
+    @property
+    def effective_time(self) -> float:
+        """When this event actually happened. Uses occurred_at if set, else created_at."""
+        return self.occurred_at if self.occurred_at is not None else self.created_at
+
     def touch(self) -> None:
         """Record an access — updates recency and frequency."""
         self.last_accessed = time.time()
@@ -108,6 +114,7 @@ class MemoryNode:
         d = {
             "id": self.id,
             "created_at": self.created_at,
+            "occurred_at": self.occurred_at,
             "last_accessed": self.last_accessed,
             "access_count": self.access_count,
             "summary_orbital": self.summary_orbital,
