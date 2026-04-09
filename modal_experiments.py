@@ -26,36 +26,36 @@ app = modal.App("imi-experiments")
 imi_image = (
     modal.Image.debian_slim(python_version="3.12")
     .pip_install(
+        # CPU-only torch (much smaller, no CUDA)
+        "torch==2.6.0+cpu",
+        extra_index_url="https://download.pytorch.org/whl/cpu",
+    )
+    .pip_install(
         "numpy>=1.26.0",
         "sentence-transformers>=3.0.0",
-        "torch>=2.0.0",
+        "anthropic>=0.80.0",
     )
     .run_commands(
         # Pre-cache the embedding model during build
         "python -c \"from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')\""
     )
+    .add_local_dir(
+        "/Users/renatoaparegomes/experimentos/tools/imi/imi",
+        remote_path="/root/imi_pkg/imi",
+    )
+    .add_local_dir(
+        "/Users/renatoaparegomes/experimentos/tools/imi/tests",
+        remote_path="/root/imi_pkg/tests",
+    )
 )
 
 results_volume = modal.Volume.from_name("imi-experiment-results", create_if_missing=True)
-
-# ── Mount the IMI codebase ────────────────────────────
-
-imi_mount = modal.Mount.from_local_dir(
-    "/Users/renatoaparegomes/experimentos/tools/imi/imi",
-    remote_path="/root/imi_pkg/imi",
-)
-
-imi_tests_mount = modal.Mount.from_local_dir(
-    "/Users/renatoaparegomes/experimentos/tools/imi/tests",
-    remote_path="/root/imi_pkg/tests",
-)
 
 
 # ── Experiment 1: L1 Tuning Sweep ────────────────────
 
 @app.function(
     image=imi_image,
-    mounts=[imi_mount],
     timeout=600,
     memory=2048,
 )
@@ -94,7 +94,6 @@ def l1_tuning_single(max_facts: int, n_incidents: int = 300, n_days: int = 90, s
 
 @app.function(
     image=imi_image,
-    mounts=[imi_mount],
     volumes={"/results": results_volume},
     timeout=900,
 )
@@ -184,7 +183,6 @@ DOMAIN_INCIDENTS = {
 
 @app.function(
     image=imi_image,
-    mounts=[imi_mount],
     timeout=600,
     memory=2048,
 )
@@ -259,7 +257,6 @@ def sd_retrieval_domain(domain: str, incidents: list[str], seed: int = 42):
 
 @app.function(
     image=imi_image,
-    mounts=[imi_mount],
     volumes={"/results": results_volume},
     timeout=900,
 )
@@ -304,9 +301,9 @@ def run_sd_diverse():
 
 @app.function(
     image=imi_image,
-    mounts=[imi_mount],
     timeout=1800,
     memory=4096,
+    secrets=[modal.Secret.from_name("anthropic-api")],
 )
 def run_full_bench(n_incidents: int = 300, n_days: int = 180):
     """Run all 6 benchmarks on Modal with consistent compute."""
@@ -382,7 +379,6 @@ def run_full_bench(n_incidents: int = 300, n_days: int = 180):
 
 @app.function(
     image=imi_image,
-    mounts=[imi_mount],
     volumes={"/results": results_volume},
     timeout=3600,
 )

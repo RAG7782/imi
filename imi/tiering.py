@@ -112,7 +112,7 @@ def generate_l1(
     nodes: list[MemoryNode],
     *,
     domain_filter: str | None = None,
-    max_facts: int = 7,
+    max_facts: int = 12,  # Optimized via Modal L1 sweep (7→12 achieves tier_ratio=1.000)
     max_affordances: int = 3,
     channel_weights: dict[str, float] | None = None,
 ) -> L1HotFacts:
