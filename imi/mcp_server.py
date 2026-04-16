@@ -12,6 +12,7 @@ This file does NOT modify the original — it wraps it.
 import json
 import os
 import sys
+import time as _time_module
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
@@ -20,15 +21,54 @@ from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP("imi", port=int(os.environ.get("IMI_PORT", "8080")))
 
-# Lazy-load IMISpace
+# --- Singleton with TTL + diagnostics (IMI-E05 S01/S02/S05) ---
+
 _space = None
+_space_loaded_at: float = 0.0
+_sqlite_load_count: int = 0
+_nav_latencies: list[float] = []   # ring buffer p50/p95
+_SPACE_TTL = float(os.environ.get("IMI_SPACE_TTL", "3600"))  # 1h default
+_LOG_FILE = Path.home() / ".claude" / "imi_boot.log"
+
+
+def _log(msg: str) -> None:
+    try:
+        with open(_LOG_FILE, "a") as f:
+            ts = _time_module.strftime("%H:%M:%S", _time_module.localtime())
+            f.write(f"[{ts}][mcp] {msg}\n")
+    except Exception:
+        pass
+
+
+def _record_latency(ms: float) -> None:
+    _nav_latencies.append(ms)
+    if len(_nav_latencies) > 100:
+        _nav_latencies.pop(0)
+
+
+def _percentile(data: list[float], pct: int) -> float | None:
+    if not data:
+        return None
+    sorted_d = sorted(data)
+    idx = int(len(sorted_d) * pct / 100)
+    return round(sorted_d[min(idx, len(sorted_d) - 1)], 1)
+
 
 def _get_space():
-    global _space
-    if _space is None:
+    global _space, _space_loaded_at, _sqlite_load_count
+    now = _time_module.monotonic()
+    if _space is None or (now - _space_loaded_at) > _SPACE_TTL:
+        t0 = _time_module.monotonic()
         from imi.space import IMISpace
         db_path = os.environ.get("IMI_DB", "imi_memory.db")
         _space = IMISpace.from_sqlite(db_path)
+        _space_loaded_at = now
+        _sqlite_load_count += 1
+        elapsed = (_time_module.monotonic() - t0) * 1000
+        _log(
+            f"from_sqlite() #{_sqlite_load_count} — {elapsed:.1f}ms | "
+            f"episodic={len(_space.episodic.nodes)} semantic={len(_space.semantic.nodes)}"
+        )
     return _space
 
 # --- Tools (CoD Pass 2 descriptions) ---
@@ -89,6 +129,7 @@ def im_nav(
     positional_optimize: bool = True,
 ) -> str:
     """Search memories with adaptive relevance and graph expansion"""
+    t0 = _time_module.monotonic()
     space = _get_space()
     rw = None if relevance_weight < 0 else relevance_weight
 
@@ -107,10 +148,15 @@ def im_nav(
         if m.get("affect_str"): mem["affect"] = m["affect_str"]
         memories.append(mem)
 
+    elapsed_ms = (_time_module.monotonic() - t0) * 1000
+    _record_latency(elapsed_ms)
+    _log(f"im_nav '{query[:40]}' — {elapsed_ms:.1f}ms | hits={len(memories)} zoom={zoom}")
+
     result = {
         "query": query, "intent": intent_obj.name,
         "relevance_weight_used": round(rw_used if rw is None else rw, 3),
         "zoom": zoom, "hits": len(memories), "memories": memories,
+        "_perf_ms": round(elapsed_ms, 1),
     }
     return json.dumps(result, ensure_ascii=False, indent=2)
 
@@ -188,6 +234,30 @@ def im_glnk(source_id: str, target_id: str, edge_type: str = "causal", label: st
         "status": "ok", "edge": f"{source_id} --[{edge_type}]--> {target_id}",
         "label": label, "total_edges": space.graph.stats()["total_edges"],
     }, ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+def im_perf() -> str:
+    """MCP server performance metrics and health check (IMI-E05 S05)"""
+    space_ok = _space is not None
+    age = (_time_module.monotonic() - _space_loaded_at) if space_ok else None
+    result = {
+        "space_loaded": space_ok,
+        "space_age_seconds": round(age, 1) if age is not None else None,
+        "space_ttl_seconds": _SPACE_TTL,
+        "episodic_count": len(_space.episodic.nodes) if space_ok else 0,
+        "semantic_count": len(_space.semantic.nodes) if space_ok else 0,
+        "from_sqlite_calls_this_session": _sqlite_load_count,
+        "nav_samples": len(_nav_latencies),
+        "p50_nav_ms": _percentile(_nav_latencies, 50),
+        "p95_nav_ms": _percentile(_nav_latencies, 95),
+        "verdict": (
+            "OK — singleton ativo, latência nominal"
+            if _sqlite_load_count <= 1 and (_percentile(_nav_latencies, 95) or 0) < 500
+            else "WARN — checar log ~/.claude/imi_boot.log"
+        ),
+    }
+    return json.dumps(result, ensure_ascii=False, indent=2)
 
 
 # --- Entry point ---
