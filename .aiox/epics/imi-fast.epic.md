@@ -160,9 +160,29 @@ def im_perf() -> str:
 - `im_enc` latência P95: baseline ? ms → alvo < 200ms (com buffer)
 - Memória RAM do processo MCP: < 600MB para 236K nós (budget: 2.5 bytes/dim/nó)
 
+## Status de implementação (2026-04-16)
+
+| Story | Status | Resultado |
+|---|---|---|
+| S01 Diagnóstico | ✅ Done | from_sqlite=1 ✅ \| warm-up=3168ms ⚠️ \| singleton=True ✅ |
+| S02 Singleton TTL | ✅ Done | TTL=1h, _sqlite_load_count, logs em imi_boot.log |
+| S03 FAISS ANN | Backlog P2 | Executar quando nós > 500K |
+| S04 Write buffer | Backlog P2 | Executar quando im_enc > 10/dia |
+| S05 im_perf tool | ✅ Done | p50/p95 nav, verdict automático |
+
+**Diagnóstico S01 — resultado:**
+- `from_sqlite()` chamado **1x por sessão** (singleton funciona ✅)
+- Warm-up: **3168ms** (gargalo: `get_all_nodes` carrega todos embeddings BLOB em RAM)
+  - `get_all_nodes episodic`: 2485ms para 486 nós
+  - `get_all_nodes semantic`: 674ms para 124 nós
+- Cache hits (calls 2-N): **0.001ms** (×3.000.000 mais rápido)
+- **Projeção:** 60K nós → ~370s warm-up | 500K nós → impossível sem FAISS
+
+**GO/NO-GO:** S03 não é urgente agora (610 nós). Revisar quando > 50K nós.
+
 ## Critério de priorização
 
-Executar S01 imediatamente. Se `from_sqlite_calls_this_session` > 1 ou P95 > 500ms → escalar para P1 e executar S02-S05. Caso contrário, manter como P2 e revisar quando nós > 500K.
+Executar S01 imediatamente (✅ feito). Se `from_sqlite_calls_this_session` > 1 ou P95 > 500ms → escalar para P1 e executar S02-S05. Caso contrário, manter como P2 e revisar quando nós > 500K.
 
 ## Referências
 
