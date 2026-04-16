@@ -104,8 +104,45 @@ Logar `semantic_ratio = semantic_slots / total_slots` após cada rebuild de cach
 - `access_count` médio de semantic nodes: baseline 1.7 → alvo > 5 após 30 sessões
 - Redução em "não sabia que já havia aprendido X" — qualitativo, verificar em retrospectiva
 
+### S06 (Research): Salience dinâmica para padrões semânticos
+> **Registrado em sessão 2026-04-16 — pesquisar antes de implementar**
+
+O `im_drm` grava padrões com salience estática (default 0.5). Isso causa o mesmo problema
+dos slots de atenção: padrões valiosos não emergem naturalmente por score.
+
+Hipótese: implementar *salience promotion* incremental:
+- Cada vez que `im_nav` retorna um padrão → `access_count += 1`
+- Cada vez que o padrão é linkado via `im_glnk` → `citation_count += 1`
+- `salience = min(0.95, 0.5 + 0.05 * log2(access_count + citation_count + 1))`
+
+Isso eliminaria a necessidade de threshold diferenciado e slots garantidos no boot —
+padrões valiosos emergiriam por uso real (RL signal).
+
+**Referência:** MemoryWorth (arXiv:2604.12007) — 2 contadores, correlação 0.89 com utilidade.
+
+**Prerequisito:** S06 deve ser pesquisado antes de implementar — avaliar se promoção
+incrementa ao longo de sessões (persistência no SQLite) ou só in-session.
+
+## Métricas de sucesso
+
+- `semantic_ratio` no boot: baseline ~0% → alvo ≥ 28% (2/7 slots) ✅ **ATINGIDO** (29%)
+- `access_count` médio de semantic nodes: baseline 1.7 → alvo > 5 após 30 sessões
+- Redução em "não sabia que já havia aprendido X" — qualitativo, verificar em retrospectiva
+
+## Status de implementação
+
+| Story | Status |
+|---|---|
+| S01 parse_episode_count | ✅ Done (2026-04-16) |
+| S02 boosted_score | ✅ Done (2026-04-16) |
+| S03 positional_reorder_v3 | ✅ Done (2026-04-16) |
+| S04 seção semântica no output | ✅ Done (2026-04-16) |
+| S05 semantic_ratio log | ✅ Done (2026-04-16) |
+| S06 salience dinâmica | Research pendente |
+
 ## Referências
 
 - arXiv:2604.12285 — GAM: dual graph com gating semântico
 - arXiv:2304.03442 — Generative Agents: reflection mechanism (predecessor do im_drm)
 - Liu et al. 2023 — Lost in the Middle: positional reorder para máxima atenção LLM
+- arXiv:2604.12007 — MemoryWorth: salience dinâmica via contadores de acesso/citação
