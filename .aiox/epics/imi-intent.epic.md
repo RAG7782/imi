@@ -151,6 +151,20 @@ if pending:
 - O agente decide se a intenção foi cumprida e chama `im_int_fulfill`
 - **Verify:** `im_enc` com tags `["oxe", "premium-endpoint"]` sugere intenção "Implementar /premium endpoint" como possível fulfillment
 
+## Status de implementação (2026-04-16)
+
+| Story | Status |
+|---|---|
+| S01 im_int() | ✅ Done — cria nó intention com seed JSON completo |
+| S02 im_int_fulfill() | ✅ Done — atualiza status + edge CAUSAL "fulfills" |
+| S03 im_int_list() | ✅ Done — filtra por status/projeto, ordena por deadline ASC |
+| S04 Boot slot intenções | ✅ Done — seção "Intenções Pendentes" no imi_boot_semantic.py |
+| S05 Canal 0 no gravar.md | Backlog — próxima sessão |
+| S06 Suggestion em im_enc | Backlog — após S05 |
+
+**Verify smoke test:** PASS — im_int → im_int_list(total=1) → im_int_fulfill → pending=0 ✅
+**Boot verify:** seção "Intenções Pendentes" aparece com ⚡ para deadline ≤7 dias ✅
+
 ## Métricas de sucesso
 
 - Intenções criadas por sessão: alvo 2-3 (tasks não cumpridas)
