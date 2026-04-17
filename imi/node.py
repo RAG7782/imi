@@ -89,9 +89,11 @@ class MemoryNode:
         return self.occurred_at if self.occurred_at is not None else self.created_at
 
     def touch(self) -> None:
-        """Record an access — updates recency and frequency."""
+        """Record an access — updates recency, frequency, and dynamic salience (S06)."""
         self.last_accessed = time.time()
         self.access_count += 1
+        if self.affect:
+            self.affect.update_dynamic(self.access_count)
 
     @property
     def relevance(self) -> float:

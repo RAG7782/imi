@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from math import sqrt
+from math import log2, sqrt
 
 from imi.llm import LLMAdapter
 
@@ -28,6 +28,7 @@ class AffectiveTag:
     salience: float = 0.5    # 0.0 (routine) to 1.0 (critical)
     valence: float = 0.0     # -1.0 (very negative) to +1.0 (very positive)
     arousal: float = 0.5     # 0.0 (calm/background) to 1.0 (urgent/activating)
+    _base_salience: float = -1.0  # initial salience before dynamic updates (-1 = not set)
 
     @property
     def encoding_strength(self) -> float:
@@ -51,6 +52,32 @@ class AffectiveTag:
         """Initial gravitational mass in the memory space."""
         return max(0.1, self.encoding_strength)
 
+    def update_dynamic(self, access_count: int) -> None:
+        """S06 — MemoryWorth salience dinâmica.
+
+        Aumenta salience proporcionalmente ao uso observado.
+        Fórmula: salience = min(0.95, base_salience + 0.05 * log2(access_count + 1))
+
+        base_salience é o valor inicial (capturado na primeira chamada) — garante
+        que a curva de crescimento é relativa ao ponto de partida, não cumulativa.
+
+        Exemplos (base=0.5):
+          access=0  → 0.50 (sem mudança)
+          access=1  → 0.55 (log2(2)=1 → +0.05)
+          access=3  → 0.60 (log2(4)=2 → +0.10)
+          access=7  → 0.65 (log2(8)=3 → +0.15)
+          access=15 → 0.70 (log2(16)=4 → +0.20)
+
+        Cap em 0.95 para nunca tornar um nó "absoluto".
+        """
+        if access_count <= 0:
+            return
+        # Captura base na primeira chamada dinâmica
+        if self._base_salience < 0:
+            self._base_salience = self.salience
+        boost = 0.05 * log2(access_count + 1)
+        self.salience = min(0.95, self._base_salience + boost)
+
     def to_dict(self) -> dict:
         return {
             "salience": self.salience,
@@ -60,7 +87,12 @@ class AffectiveTag:
 
     @classmethod
     def from_dict(cls, d: dict) -> AffectiveTag:
-        return cls(**d)
+        # _base_salience não é persistido — será capturado no primeiro update_dynamic
+        return cls(
+            salience=d.get("salience", 0.5),
+            valence=d.get("valence", 0.0),
+            arousal=d.get("arousal", 0.5),
+        )
 
     def __str__(self) -> str:
         valence_str = "+" if self.valence >= 0 else ""
