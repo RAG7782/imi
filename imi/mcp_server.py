@@ -73,6 +73,48 @@ def _get_space():
 
 # --- Tools (CoD Pass 2 descriptions) ---
 
+def _find_related_intentions(space, tag_list: list[str], experience: str) -> list[dict]:
+    """IMI-E04 S06: Find pending intentions with tag or keyword overlap.
+
+    Matches by: (1) direct tag intersection, (2) keyword presence in intention content.
+    Returns intentions sorted by overlap_score DESC, max 3.
+    """
+    exp_words = set(w.lower() for w in experience.split() if len(w) > 4)
+    tag_set = set(t.lower() for t in (tag_list or []))
+
+    matches = []
+    for node in space.episodic.nodes:
+        if not (node.summary_orbital.startswith("[INTENT:") or
+                node.summary_orbital.startswith("[DONE:")):
+            continue
+        try:
+            data = json.loads(node.seed)
+        except Exception:
+            continue
+        if data.get("node_type") != "intention" or data.get("status") != "pending":
+            continue
+
+        intent_tags = set(t.lower() for t in (data.get("tags") or []))
+        intent_words = set(w.lower() for w in data.get("content", "").split() if len(w) > 4)
+
+        tag_overlap = len(tag_set & intent_tags)
+        word_overlap = len(exp_words & intent_words)
+        overlap_score = tag_overlap * 2 + word_overlap  # tags contam mais
+
+        if overlap_score >= 1:
+            matches.append({
+                "id": node.id,
+                "content": data.get("content", "")[:120],
+                "project": data.get("project", ""),
+                "deadline": data.get("deadline", ""),
+                "overlap_score": overlap_score,
+                "tag_matches": list(tag_set & intent_tags),
+            })
+
+    matches.sort(key=lambda x: x["overlap_score"], reverse=True)
+    return matches[:3]
+
+
 @mcp.tool()
 def im_enc(
     experience: str,
@@ -104,6 +146,9 @@ def im_enc(
     )
     node.occurred_at = occurred_float
 
+    # IMI-E04 S06: Check for pending intentions with tag/keyword overlap
+    related_intentions = _find_related_intentions(space, tag_list or [], experience)
+
     result = {
         "id": node.id,
         "summary": node.summary_medium,
@@ -116,7 +161,37 @@ def im_enc(
         "mass": round(node.mass, 3),
         "total_memories": len(space.episodic),
     }
+    if related_intentions:
+        result["pending_intentions_hint"] = related_intentions
+        _log(f"im_enc S06: {len(related_intentions)} related intention(s) detected for node {node.id[:8]}")
+
     return json.dumps(result, ensure_ascii=False, indent=2)
+
+
+def _mw_score_from_node(node) -> float:
+    """Extrai Memory Worth score do seed JSON do nó. Retorna 0.5 (neutral) se não existe."""
+    try:
+        if node.seed:
+            d = json.loads(node.seed)
+            if "mw_score" in d:
+                return float(d["mw_score"])
+    except Exception:
+        pass
+    return 0.5  # prior neutro para nós sem histórico
+
+
+def _affordance_max_confidence(node) -> float:
+    """Retorna a maior confidence de affordance do nó."""
+    try:
+        affs = node.affordances or []
+        if not affs:
+            return 0.5
+        return max(
+            (float(a.confidence) if hasattr(a, "confidence") else 0.5)
+            for a in affs
+        )
+    except Exception:
+        return 0.5
 
 
 @mcp.tool()
@@ -127,35 +202,69 @@ def im_nav(
     context: str = "",
     relevance_weight: float = -1,
     positional_optimize: bool = True,
+    mode: str = "semantic",
 ) -> str:
-    """Search memories with adaptive relevance and graph expansion"""
+    """Search memories with adaptive relevance and graph expansion.
+
+    mode="semantic"  — padrão: ranking por cosine similarity (comportamento original)
+    mode="utility"   — IMI-E01 S03: Two-Phase Retrieval
+                       Phase 1: filtra candidatos com score semântico >= MIN_SCORE
+                       Phase 2: rerank por MW × affordance_max_confidence
+                       Ref: MemRL (arXiv:2601.03192) + MemoryWorth (arXiv:2604.12007)
+    """
     t0 = _time_module.monotonic()
     space = _get_space()
     rw = None if relevance_weight < 0 else relevance_weight
 
     nav = space.navigate(
-        query, zoom=zoom, top_k=top_k, context=context,
-        relevance_weight=rw, positional_optimize=positional_optimize,
+        query, zoom=zoom, top_k=top_k if mode == "semantic" else top_k * 3,
+        context=context, relevance_weight=rw, positional_optimize=positional_optimize,
     )
 
     rw_used, intent_obj = space.adaptive_rw.classify_with_info(query)
 
+    raw_memories = nav.memories[: top_k * 3 if mode == "utility" else top_k]
+
+    if mode == "utility":
+        # Phase 1: filtrar candidatos com score semântico >= 0.62 (MIN_SCORE)
+        MIN_SEMANTIC = 0.62
+        candidates = [m for m in raw_memories if m.get("score", 0) >= MIN_SEMANTIC]
+        if not candidates:
+            candidates = raw_memories  # fallback: sem filtro se nenhum passa
+
+        # Phase 2: rerank por MW × affordance_max_confidence
+        def utility_score(m: dict) -> float:
+            node = space.episodic.get(m.get("id", "")) or space.semantic.get(m.get("id", ""))
+            mw = _mw_score_from_node(node) if node else 0.5
+            aff = _affordance_max_confidence(node) if node else 0.5
+            return mw * aff
+
+        candidates.sort(key=utility_score, reverse=True)
+        final_memories = candidates[:top_k]
+    else:
+        final_memories = raw_memories[:top_k]
+
     memories = []
-    for m in nav.memories[:top_k]:
+    for m in final_memories:
         mem = {"score": round(m["score"], 3), "content": m["content"],
                "id": m.get("id", ""), "tags": m.get("tags", [])}
         if m.get("affordances"): mem["affordances"] = m["affordances"][:2]
         if m.get("affect_str"): mem["affect"] = m["affect_str"]
+        if mode == "utility":
+            node = space.episodic.get(m.get("id", "")) or space.semantic.get(m.get("id", ""))
+            mem["mw_score"] = _mw_score_from_node(node) if node else 0.5
         memories.append(mem)
 
     elapsed_ms = (_time_module.monotonic() - t0) * 1000
     _record_latency(elapsed_ms)
-    _log(f"im_nav '{query[:40]}' — {elapsed_ms:.1f}ms | hits={len(memories)} zoom={zoom}")
+    _log(f"im_nav '{query[:40]}' — {elapsed_ms:.1f}ms | hits={len(memories)} zoom={zoom} mode={mode}")
 
     result = {
         "query": query, "intent": intent_obj.name,
         "relevance_weight_used": round(rw_used if rw is None else rw, 3),
-        "zoom": zoom, "hits": len(memories), "memories": memories,
+        "zoom": zoom, "hits": len(memories),
+        "retrieval_mode": mode,
+        "memories": memories,
         "_perf_ms": round(elapsed_ms, 1),
     }
     return json.dumps(result, ensure_ascii=False, indent=2)
@@ -432,6 +541,177 @@ def im_int_list(
         "total": len(intentions), "filtered": len(items),
         "status": status, "project": project,
         "intentions": items,
+    }, ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+def im_feedback(
+    node_ids: list[str],
+    outcome: str,
+    context: str = "",
+    magnitude: float = 0.5,
+) -> str:
+    """MemoryWorth S06 — Feedback de outcome para ajuste dinâmico de salience.
+
+    Recebe o resultado de usar memórias (positivo/negativo/neutro) e ajusta
+    salience + valence via Bayesian update. Fecha o loop: memórias que levam
+    a bons outcomes ganham salience; memórias que levam a erros perdem.
+
+    Args:
+        node_ids:  Lista de IDs de nós usados (retornados pelo im_nav).
+        outcome:   "positive" | "negative" | "neutral"
+        context:   Contexto do uso (opcional — enriquece o log de aprendizado).
+        magnitude: Força do feedback 0.0–1.0 (default 0.5 = feedback normal).
+
+    Fórmula de update (Bayesian-inspired):
+        positive → salience += magnitude * 0.1 * (1 - current_salience)  [ceil 0.95]
+        negative → salience -= magnitude * 0.1 * current_salience         [floor 0.1]
+        neutral  → salience unchanged (apenas registra acesso)
+
+    Valence também é ajustada:
+        positive → valence += 0.05 * magnitude  [ceil +0.9]
+        negative → valence -= 0.05 * magnitude  [floor -0.9]
+    """
+    outcome = outcome.strip().lower()
+    if outcome not in ("positive", "negative", "neutral"):
+        return json.dumps({
+            "error": f"outcome deve ser 'positive', 'negative' ou 'neutral' — recebido: '{outcome}'"
+        })
+
+    if not node_ids:
+        return json.dumps({"error": "node_ids não pode ser vazio"})
+
+    space = _get_space()
+    updated = []
+    not_found = []
+
+    for node_id in node_ids:
+        # Buscar nó em ambas as stores (episodic e semantic)
+        node = space.episodic.get(node_id) or space.semantic.get(node_id)
+        if node is None:
+            not_found.append(node_id)
+            continue
+
+        old_salience = node.affect.salience if node.affect else 0.5
+        old_valence = node.affect.valence if node.affect else 0.0
+
+        if node.affect is None:
+            from imi.affect import AffectiveTag
+            node.affect = AffectiveTag()
+
+        if outcome == "positive":
+            # Regra assintótica: quanto mais alta a salience, menor o ganho marginal
+            delta_s = magnitude * 0.1 * (1.0 - node.affect.salience)
+            node.affect.salience = min(0.95, node.affect.salience + delta_s)
+            delta_v = 0.05 * magnitude
+            node.affect.valence = min(0.9, node.affect.valence + delta_v)
+        elif outcome == "negative":
+            # Decaimento proporcional: memórias com alta salience decaem mais
+            delta_s = magnitude * 0.1 * node.affect.salience
+            node.affect.salience = max(0.1, node.affect.salience - delta_s)
+            delta_v = 0.05 * magnitude
+            node.affect.valence = max(-0.9, node.affect.valence - delta_v)
+        # neutral: sem mudança em affect, mas touch() registra o acesso
+
+        node.touch()  # registra acesso + boost logarítmico via update_dynamic
+
+        updated.append({
+            "id": node_id,
+            "salience_before": round(old_salience, 3),
+            "salience_after": round(node.affect.salience, 3),
+            "valence_before": round(old_valence, 3),
+            "valence_after": round(node.affect.valence, 3),
+            "access_count": node.access_count,
+        })
+
+    # Persistir mudanças
+    if updated:
+        space.save()
+
+    _log(
+        f"im_feedback outcome={outcome} mag={magnitude:.2f} | "
+        f"updated={len(updated)} not_found={len(not_found)}"
+    )
+
+    return json.dumps({
+        "outcome": outcome,
+        "magnitude": magnitude,
+        "context": context[:200] if context else "",
+        "updated": updated,
+        "not_found": not_found,
+        "saved": bool(updated),
+    }, ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+def im_mw_update(
+    node_ids: list[str],
+    outcome: str,
+    session_id: str = "",
+) -> str:
+    """IMI-E01 S02: Update Memory Worth counters (success/failure) for given nodes.
+
+    Memory Worth (MW) = success_count / max(1, success_count + failure_count)
+    Ref: arXiv:2604.12007 — correlação 0.89 com utilidade real.
+
+    Args:
+        node_ids: IDs dos nós usados nesta sessão
+        outcome:  "success" | "failure"
+        session_id: identificador da sessão para auditoria (opcional)
+
+    Returns:
+        {updated: N, mw_scores: {node_id: float}, session_id: str}
+
+    Verify: im_mw_update(["node_id"], "success") → mw_scores shows MW > 0
+    """
+    outcome = outcome.strip().lower()
+    if outcome not in ("success", "failure"):
+        return json.dumps({"error": f"outcome deve ser 'success' ou 'failure', recebido: '{outcome}'"})
+
+    space = _get_space()
+    updated: dict[str, float] = {}
+    not_found: list[str] = []
+
+    for node_id in node_ids:
+        node = space.episodic.get(node_id) or space.semantic.get(node_id)
+        if node is None:
+            # Tentar via backend direto
+            node = space.backend.get_node("episodic", node_id) or space.backend.get_node("semantic", node_id)
+        if node is None:
+            not_found.append(node_id)
+            continue
+
+        # MW counters vivem no JSON do seed/data (schema-free — sem ALTER TABLE)
+        try:
+            seed_data = json.loads(node.seed) if node.seed else {}
+        except Exception:
+            seed_data = {}
+
+        if outcome == "success":
+            seed_data["mw_success"] = seed_data.get("mw_success", 0) + 1
+        else:
+            seed_data["mw_failure"] = seed_data.get("mw_failure", 0) + 1
+
+        sc = seed_data.get("mw_success", 0)
+        fc = seed_data.get("mw_failure", 0)
+        mw = sc / max(1, sc + fc)
+        seed_data["mw_score"] = round(mw, 4)
+        seed_data["mw_last_updated"] = _time_module.time()
+
+        node.seed = json.dumps(seed_data, ensure_ascii=False)
+        updated[node_id] = round(mw, 4)
+
+    if updated:
+        space.save()
+
+    _log(f"im_mw_update outcome={outcome} | updated={len(updated)} not_found={len(not_found)} session={session_id}")
+
+    return json.dumps({
+        "outcome": outcome,
+        "updated": len(updated),
+        "mw_scores": updated,
+        "not_found": not_found,
+        "session_id": session_id,
     }, ensure_ascii=False, indent=2)
 
 

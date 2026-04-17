@@ -159,8 +159,8 @@ if pending:
 | S02 im_int_fulfill() | ✅ Done — atualiza status + edge CAUSAL "fulfills" |
 | S03 im_int_list() | ✅ Done — filtra por status/projeto, ordena por deadline ASC |
 | S04 Boot slot intenções | ✅ Done — seção "Intenções Pendentes" no imi_boot_semantic.py |
-| S05 Canal 0 no gravar.md | Backlog — próxima sessão |
-| S06 Suggestion em im_enc | Backlog — após S05 |
+| S05 Canal 0 no gravar.md | ✅ Done — Canal 0 em gravar.md linha 84 |
+| S06 Suggestion em im_enc | ✅ Done — _find_related_intentions em mcp_server.py |
 
 **Verify smoke test:** PASS — im_int → im_int_list(total=1) → im_int_fulfill → pending=0 ✅
 **Boot verify:** seção "Intenções Pendentes" aparece com ⚡ para deadline ≤7 dias ✅

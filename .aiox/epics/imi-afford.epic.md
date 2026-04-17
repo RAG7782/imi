@@ -80,3 +80,15 @@ Adicionar ao protocolo GRAVAR (Canal 1) step final:
 
 - arXiv:2601.03192 — MemRL: two-phase retrieval
 - arXiv:2604.12007 — Memory Worth Metric: MW = p+(m) correlação 0.89 com utilidade real
+
+## Status de implementação (2026-04-17)
+
+| Story | Status | Arquivo |
+|---|---|---|
+| S01 Schema MW counters | ✅ Done | mcp_server.py — seed JSON (schema-free) |
+| S02 im_mw_update tool | ✅ Done | mcp_server.py:im_mw_update |
+| S03 Two-Phase Retrieval em im_nav | ✅ Done | mcp_server.py:im_nav(mode="utility") |
+| S04 Integração imi_delta_nav.py | ✅ Done | .claude/imi_delta_nav.py — use_utility_rerank |
+| S05 im_mw_update no GRAVAR | ✅ Done | .claude/commands/gravar.md — Canal 1.4 |
+
+**Verify smoke test:** im_mw_update schema-free PASS | im_nav mode=utility PASS | delta use_utility_rerank PASS

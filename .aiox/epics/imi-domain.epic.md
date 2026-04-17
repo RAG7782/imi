@@ -140,3 +140,15 @@ echo "KONA" > ~/.aiox_domain  # força domínio para próxima sessão
 
 - arXiv:2604.11563 — Synthius-Mem: CategoryRAG + 6 domínios cognitivos, 94.37% LoCoMo
 - arXiv:2309.02427 — CoALA: taxonomia de 4 tipos de memória (working/episodic/semantic/procedural)
+
+## Status de implementação (2026-04-17)
+
+| Story | Status | Arquivo |
+|---|---|---|
+| S01 imi_domains.py taxonomy | ✅ Done | ~/.claude/imi_domains.py |
+| S02 domain_filter em fetch_top_memories | ✅ Done | .claude/imi_boot_semantic.py — _score_rows |
+| S03 Integração imi_boot_semantic.py | ✅ Done | build_cache() detecta domínio, injeta domain= no imi_boot |
+| S04 Integração imi_delta_nav.py | ✅ Done | main() — _get_domain_mod() + domain_tags |
+| S05 Override manual ~/.aiox_domain | ✅ Done | imi_domains.py — single-use file |
+
+**Verify smoke test:** detect_domain(/analises) → ('KONA','cwd') PASS | override RESEARCH PASS | single-use delete PASS
