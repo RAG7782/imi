@@ -309,6 +309,71 @@ def read_handoff_snippet() -> str:
     return "\n".join(snippet) if snippet else "\n".join(text[:8])
 
 
+def fetch_intentions(conn: sqlite3.Connection, status: str = "pending", top_k: int = 3) -> list[dict]:
+    """Busca intenções pendentes ordenadas por deadline ASC."""
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT node_id, data FROM (
+            SELECT node_id, data FROM memory_nodes
+            WHERE is_deleted = 0 AND store_name = 'episodic'
+            ORDER BY id DESC LIMIT 2000
+        )
+    """)
+    rows = cur.fetchall()
+
+    intentions = []
+    for node_id, data_str in rows:
+        try:
+            row_data = json.loads(data_str)
+        except Exception:
+            continue
+        # Intenções têm o JSON completo em row_data["seed"]
+        seed_str = row_data.get("seed", "")
+        if not seed_str:
+            continue
+        try:
+            intent = json.loads(seed_str)
+        except Exception:
+            continue
+        if intent.get("node_type") != "intention":
+            continue
+        if intent.get("status", "pending") != status:
+            continue
+        intentions.append({
+            "id": node_id,
+            "content": intent.get("content", ""),
+            "context": intent.get("context", ""),
+            "project": intent.get("project", ""),
+            "deadline": intent.get("deadline", ""),
+            "deadline_ts": intent.get("deadline_ts"),
+            "confidence": intent.get("confidence", 0.85),
+        })
+
+    def sort_key(i):
+        return (i.get("deadline_ts") or float("inf"), -i.get("confidence", 0.85))
+
+    intentions.sort(key=sort_key)
+    return intentions[:top_k]
+
+
+def format_intention(intent: dict) -> str:
+    """Formata intenção para o bloco boot (1 linha)."""
+    project = intent.get("project", "")
+    deadline = intent.get("deadline", "")
+    content = intent.get("content", "")
+
+    # Label de urgência
+    urgent = False
+    if intent.get("deadline_ts"):
+        days_left = (intent["deadline_ts"] - time.time()) / 86400
+        urgent = days_left <= 7
+
+    label = "⚡" if urgent else "📌"
+    proj_str = f"[{project}] " if project else ""
+    dead_str = f" | até {deadline[:10]}" if deadline else ""
+    return f"{label} {proj_str}{content[:100]}{dead_str}"
+
+
 def build_cache() -> str:
     """Constrói o bloco <imi_boot> completo."""
     ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -324,6 +389,7 @@ def build_cache() -> str:
             raise FileNotFoundError(f"IMI DB não encontrado: {IMI_DB}")
         conn = sqlite3.connect(str(IMI_DB))
         memories = fetch_top_memories(conn, TOP_N)
+        intentions = fetch_intentions(conn, status="pending", top_k=3)
         conn.close()
         reordered = positional_reorder_v3(memories)
 
@@ -354,6 +420,7 @@ def build_cache() -> str:
 
     except Exception as e:
         log(f"WARN: falha na busca semântica: {e}")
+        intentions = []
         episodic_lines = ["(busca semântica indisponível — usar im_sts no boot)"]
 
     knowledge = read_knowledge_snippet()
@@ -369,10 +436,17 @@ def build_cache() -> str:
 ## Conhecimento Consolidado (semantic patterns)
 {sem_section}""" if has_semantic else ""
 
+    # Seção de intenções pendentes (S04 — aparece SEMPRE se houver pendências)
+    intent_lines = [format_intention(i) for i in intentions]
+    intent_section = "\n".join(f"  {l}" for l in intent_lines)
+    intent_block = f"""
+## Intenções Pendentes
+{intent_section}""" if intent_lines else ""
+
     block = f"""<imi_boot ts="{ts}" strategy="semantic_v3">
 ## Memórias Recentes (episodic — primacy)
 {ep_section or "  (nenhuma)"}
-{semantic_block}
+{semantic_block}{intent_block}
 ## Contexto Misto
 {mix_section or "  (nenhum)"}
 

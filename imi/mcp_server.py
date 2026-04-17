@@ -237,6 +237,205 @@ def im_glnk(source_id: str, target_id: str, edge_type: str = "causal", label: st
 
 
 @mcp.tool()
+def im_int(
+    content: str,
+    context: str,
+    project: str = "",
+    deadline: str = "",
+    confidence: float = 0.85,
+    tags: str = "",
+    source: str = "",
+) -> str:
+    """Store pending intention with deadline and context"""
+    import uuid as _uuid
+    from datetime import datetime, timezone
+
+    space = _get_space()
+    tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
+    if project and project not in tag_list:
+        tag_list.insert(0, project.lower())
+
+    node_id = f"intent_{_uuid.uuid4().hex[:8]}"
+    now = _time_module.time()
+
+    deadline_ts = None
+    if deadline:
+        try:
+            deadline_ts = datetime.fromisoformat(deadline.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            pass
+
+    data = {
+        "id": node_id,
+        "node_type": "intention",
+        "content": content,
+        "context": context,
+        "project": project,
+        "deadline": deadline,
+        "deadline_ts": deadline_ts,
+        "confidence": confidence,
+        "status": "pending",
+        "fulfilled_by": None,
+        "blocked_by": None,
+        "tags": tag_list,
+        "created_at": now,
+        "salience": 0.85,
+        "source": source or "im_int",
+        "affect": {"salience": 0.85, "fade_resist": 0.95},
+        "summary_orbital": f"[INTENT:{project}] {content[:120]}",
+        "summary_medium": f"{content} | {context[:200]}",
+    }
+
+    mn = _intention_to_node(data)
+    # Persiste via backend e mantém em memória no VectorStore
+    space.backend.put_node("episodic", mn)
+    space.episodic.nodes.append(mn)
+    space.episodic._dirty = True
+
+    _log(f"im_int created: {node_id} | project={project} deadline={deadline}")
+
+    return json.dumps({
+        "id": node_id, "content": content,
+        "project": project, "deadline": deadline,
+        "status": "pending", "tags": tag_list,
+    }, ensure_ascii=False, indent=2)
+
+
+def _intention_to_node(data: dict):
+    """Converte dict de intenção em MemoryNode.
+
+    O JSON completo fica em `content` para recuperação fiel via im_int_list.
+    summary_orbital = preview legível (node_type como prefixo para filtragem).
+    """
+    from imi.node import MemoryNode
+    from imi.affect import AffectiveTag
+    # AffectiveTag: salience + valence + arousal (fade_resist é property calculada)
+    # arousal=0.8 → fade_resistance = salience*(0.3+0.7*emotional_intensity) ≈ 0.85*0.86 ≈ 0.73
+    affect = AffectiveTag(salience=data.get("salience", 0.85), valence=0.5, arousal=0.8)
+    return MemoryNode(
+        id=data["id"],
+        seed=json.dumps(data, ensure_ascii=False),       # JSON completo em seed para recuperação
+        original=data["content"],                        # texto legível em original
+        summary_medium=data.get("summary_medium", data["content"][:200]),
+        summary_orbital=data.get("summary_orbital", f"[INTENT:{data.get('project','')}] {data['content'][:80]}"),
+        tags=data.get("tags", []),
+        source=data.get("source", "im_int"),
+        created_at=data.get("created_at", _time_module.time()),
+        affect=affect,
+    )
+
+
+@mcp.tool()
+def im_int_fulfill(
+    intent_id: str,
+    fulfilled_by: str = "",
+    notes: str = "",
+) -> str:
+    """Mark intention as fulfilled, optionally linking to the completing memory node"""
+    from imi.graph import EdgeType
+
+    space = _get_space()
+
+    # Busca o nó pelo ID (episodic store — in-memory first, then backend)
+    node = space.episodic.get(intent_id)
+    if node is None:
+        node = space.backend.get_node("episodic", intent_id)
+
+    if node is None:
+        return json.dumps({"error": f"intent_id not found: {intent_id}"}, ensure_ascii=False)
+
+    # Verifica que é intenção
+    try:
+        data = json.loads(node.seed)
+    except Exception:
+        data = {}
+    if data.get("node_type") != "intention":
+        return json.dumps({"error": f"{intent_id} is not an intention node"}, ensure_ascii=False)
+
+    # Atualiza campos de fulfillment no JSON interno
+    data["status"] = "fulfilled"
+    data["fulfilled_by"] = fulfilled_by or None
+    data["notes"] = notes
+    data["fulfilled_at"] = _time_module.time()
+    node.seed = json.dumps(data, ensure_ascii=False)
+    node.summary_orbital = node.summary_orbital.replace("[INTENT:", "[DONE:")
+
+    # Persiste atualização
+    space.backend.put_node("episodic", node)
+
+    # Cria edge causal se fulfilled_by é node_id válido
+    edge_created = False
+    if fulfilled_by:
+        try:
+            space.graph.add_edge(fulfilled_by, intent_id, EdgeType.CAUSAL, label="fulfills")
+            edge_created = True
+        except Exception as e:
+            _log(f"im_int_fulfill edge WARN: {e}")
+
+    _log(f"im_int_fulfill: {intent_id} → fulfilled | by={fulfilled_by} edge={edge_created}")
+
+    return json.dumps({
+        "status": "fulfilled", "intent_id": intent_id,
+        "fulfilled_by": fulfilled_by, "edge_created": edge_created,
+    }, ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+def im_int_list(
+    project: str = "",
+    status: str = "pending",
+    top_k: int = 10,
+) -> str:
+    """List intentions filtered by project and status, ordered by deadline"""
+    space = _get_space()
+
+    intentions = []
+    for node in space.episodic.nodes:
+        # Intenções são identificadas pelo prefixo [INTENT: no summary_orbital
+        # ou pelo node_type no JSON de content
+        if not (node.summary_orbital.startswith("[INTENT:") or node.summary_orbital.startswith("[DONE:")):
+            continue
+        try:
+            data = json.loads(node.seed)
+        except Exception:
+            continue
+        if data.get("node_type") != "intention":
+            continue
+        if status and data.get("status", "pending") != status:
+            continue
+        if project and data.get("project", "").upper() != project.upper():
+            continue
+        intentions.append({
+            "id": node.id,
+            "content": data.get("content", ""),
+            "context": data.get("context", ""),
+            "project": data.get("project", ""),
+            "deadline": data.get("deadline", ""),
+            "deadline_ts": data.get("deadline_ts"),
+            "status": data.get("status", "pending"),
+            "confidence": data.get("confidence", 0.85),
+            "tags": node.tags,
+            "created_at": node.created_at,
+        })
+
+    # Ordenar: deadline ASC (None vai para o fim), depois salience DESC
+    def sort_key(i):
+        dt = i.get("deadline_ts") or float("inf")
+        return (dt, -i.get("confidence", 0.85))
+
+    intentions.sort(key=sort_key)
+    items = intentions[:top_k]
+
+    _log(f"im_int_list: {len(items)} intentions | project={project} status={status}")
+
+    return json.dumps({
+        "total": len(intentions), "filtered": len(items),
+        "status": status, "project": project,
+        "intentions": items,
+    }, ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
 def im_perf() -> str:
     """MCP server performance metrics and health check (IMI-E05 S05)"""
     space_ok = _space is not None
