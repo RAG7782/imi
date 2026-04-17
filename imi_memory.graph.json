@@ -364,115 +364,185 @@
     "label": "auto-detected (cos=0.69)"
   },
   {
-    "source_id": "46ed541768eb",
-    "target_id": "c2bc0a4adf78",
-    "edge_type": "causal",
-    "weight": 0.6892334222793579,
-    "label": "auto-detected (cos=0.69)"
-  },
-  {
-    "source_id": "c2bc0a4adf78",
-    "target_id": "46ed541768eb",
-    "edge_type": "causal",
-    "weight": 0.6892334222793579,
-    "label": "auto-detected (cos=0.69)"
-  },
-  {
-    "source_id": "1dd08f122f4a",
-    "target_id": "47ba8a10846b",
-    "edge_type": "causal",
-    "weight": 0.6980706453323364,
-    "label": "auto-detected (cos=0.70)"
-  },
-  {
-    "source_id": "1dd08f122f4a",
+    "source_id": "cc01b347cffe",
     "target_id": "482e8cee7471",
     "edge_type": "causal",
-    "weight": 0.6914050579071045,
-    "label": "auto-detected (cos=0.69)"
+    "weight": 0.7338797450065613,
+    "label": "auto-detected (cos=0.73)"
   },
   {
-    "source_id": "47ba8a10846b",
-    "target_id": "1dd08f122f4a",
+    "source_id": "cc01b347cffe",
+    "target_id": "b7496dc57c69",
     "edge_type": "causal",
-    "weight": 0.6980706453323364,
-    "label": "auto-detected (cos=0.70)"
+    "weight": 0.6790260672569275,
+    "label": "auto-detected (cos=0.68)"
+  },
+  {
+    "source_id": "cc01b347cffe",
+    "target_id": "5b71252d95ae",
+    "edge_type": "causal",
+    "weight": 0.7250937223434448,
+    "label": "auto-detected (cos=0.73)"
   },
   {
     "source_id": "482e8cee7471",
-    "target_id": "1dd08f122f4a",
+    "target_id": "cc01b347cffe",
     "edge_type": "causal",
-    "weight": 0.6914050579071045,
-    "label": "auto-detected (cos=0.69)"
+    "weight": 0.7338797450065613,
+    "label": "auto-detected (cos=0.73)"
   },
   {
-    "source_id": "77be3e9bd290",
-    "target_id": "eea8f2622ea6",
+    "source_id": "b7496dc57c69",
+    "target_id": "cc01b347cffe",
     "edge_type": "causal",
-    "weight": 0.6679059863090515,
-    "label": "auto-detected (cos=0.67)"
+    "weight": 0.6790260672569275,
+    "label": "auto-detected (cos=0.68)"
   },
   {
-    "source_id": "77be3e9bd290",
-    "target_id": "f62aba994143",
-    "edge_type": "co_occurrence",
+    "source_id": "b7496dc57c69",
+    "target_id": "5b71252d95ae",
+    "edge_type": "causal",
+    "weight": 0.7154262065887451,
+    "label": "auto-detected (cos=0.72)"
+  },
+  {
+    "source_id": "5b71252d95ae",
+    "target_id": "cc01b347cffe",
+    "edge_type": "causal",
+    "weight": 0.7250937223434448,
+    "label": "auto-detected (cos=0.73)"
+  },
+  {
+    "source_id": "5b71252d95ae",
+    "target_id": "b7496dc57c69",
+    "edge_type": "causal",
+    "weight": 0.7154262065887451,
+    "label": "auto-detected (cos=0.72)"
+  },
+  {
+    "source_id": "5b71252d95ae",
+    "target_id": "5ae073d2bcdd",
+    "edge_type": "causal",
+    "weight": 0.6545942425727844,
+    "label": "auto-detected (cos=0.65)"
+  },
+  {
+    "source_id": "5ae073d2bcdd",
+    "target_id": "5b71252d95ae",
+    "edge_type": "causal",
+    "weight": 0.6545942425727844,
+    "label": "auto-detected (cos=0.65)"
+  },
+  {
+    "source_id": "feef20afbbfa",
+    "target_id": "82b82e5b4d4e",
+    "edge_type": "causal",
+    "weight": 0.8,
+    "label": "auto-detected (cos=0.88)"
+  },
+  {
+    "source_id": "feef20afbbfa",
+    "target_id": "4821041e0451",
+    "edge_type": "causal",
+    "weight": 0.6767537593841553,
+    "label": "auto-detected (cos=0.68)"
+  },
+  {
+    "source_id": "82b82e5b4d4e",
+    "target_id": "feef20afbbfa",
+    "edge_type": "causal",
+    "weight": 0.8,
+    "label": "auto-detected (cos=0.88)"
+  },
+  {
+    "source_id": "4821041e0451",
+    "target_id": "feef20afbbfa",
+    "edge_type": "causal",
+    "weight": 0.6767537593841553,
+    "label": "auto-detected (cos=0.68)"
+  },
+  {
+    "source_id": "04727bf8e086",
+    "target_id": "c9d748f4155e",
+    "edge_type": "causal",
+    "weight": 0.8,
+    "label": "auto-detected (cos=0.83)"
+  },
+  {
+    "source_id": "04727bf8e086",
+    "target_id": "8a90f5391f7b",
+    "edge_type": "causal",
+    "weight": 0.8,
+    "label": "auto-detected (cos=0.83)"
+  },
+  {
+    "source_id": "c9d748f4155e",
+    "target_id": "04727bf8e086",
+    "edge_type": "causal",
+    "weight": 0.8,
+    "label": "auto-detected (cos=0.83)"
+  },
+  {
+    "source_id": "c9d748f4155e",
+    "target_id": "8a90f5391f7b",
+    "edge_type": "causal",
+    "weight": 0.8,
+    "label": "auto-detected (cos=0.85)"
+  },
+  {
+    "source_id": "8a90f5391f7b",
+    "target_id": "c9d748f4155e",
+    "edge_type": "causal",
+    "weight": 0.8,
+    "label": "auto-detected (cos=0.85)"
+  },
+  {
+    "source_id": "8a90f5391f7b",
+    "target_id": "04727bf8e086",
+    "edge_type": "causal",
+    "weight": 0.8,
+    "label": "auto-detected (cos=0.83)"
+  },
+  {
+    "source_id": "ef8e9c030e7b",
+    "target_id": "intent_91a4adbd",
+    "edge_type": "causal",
     "weight": 1.0,
-    "label": "same_session:16abr-imi-melhorias"
+    "label": "fulfills"
   },
   {
-    "source_id": "77be3e9bd290",
-    "target_id": "6f9cf6a33c36",
-    "edge_type": "co_occurrence",
-    "weight": 1.0,
-    "label": "same_session:16abr-imi-melhorias"
-  },
-  {
-    "source_id": "eea8f2622ea6",
-    "target_id": "77be3e9bd290",
-    "edge_type": "causal",
-    "weight": 0.6679059863090515,
-    "label": "auto-detected (cos=0.67)"
-  },
-  {
-    "source_id": "f62aba994143",
-    "target_id": "10a2b9f499c2",
-    "edge_type": "causal",
-    "weight": 0.6646636724472046,
-    "label": "auto-detected (cos=0.66)"
-  },
-  {
-    "source_id": "f62aba994143",
-    "target_id": "77be3e9bd290",
-    "edge_type": "co_occurrence",
-    "weight": 1.0,
-    "label": "same_session:16abr-imi-melhorias"
-  },
-  {
-    "source_id": "f62aba994143",
-    "target_id": "cef58d85dec4",
+    "source_id": "ef8e9c030e7b",
+    "target_id": "intent_2e44f04b",
     "edge_type": "causal",
     "weight": 1.0,
-    "label": "roadmap_informed_by_sota_research"
+    "label": "fulfills"
   },
   {
-    "source_id": "10a2b9f499c2",
-    "target_id": "f62aba994143",
-    "edge_type": "causal",
-    "weight": 0.6646636724472046,
-    "label": "auto-detected (cos=0.66)"
-  },
-  {
-    "source_id": "cef58d85dec4",
-    "target_id": "f62aba994143",
+    "source_id": "ef8e9c030e7b",
+    "target_id": "intent_3bf8165d",
     "edge_type": "causal",
     "weight": 1.0,
-    "label": "roadmap_informed_by_sota_research"
+    "label": "fulfills"
   },
   {
-    "source_id": "6f9cf6a33c36",
-    "target_id": "77be3e9bd290",
-    "edge_type": "co_occurrence",
+    "source_id": "intent_91a4adbd",
+    "target_id": "ef8e9c030e7b",
+    "edge_type": "causal",
     "weight": 1.0,
-    "label": "same_session:16abr-imi-melhorias"
+    "label": "fulfills"
+  },
+  {
+    "source_id": "intent_2e44f04b",
+    "target_id": "ef8e9c030e7b",
+    "edge_type": "causal",
+    "weight": 1.0,
+    "label": "fulfills"
+  },
+  {
+    "source_id": "intent_3bf8165d",
+    "target_id": "ef8e9c030e7b",
+    "edge_type": "causal",
+    "weight": 1.0,
+    "label": "fulfills"
   }
 ]
