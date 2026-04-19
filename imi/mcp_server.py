@@ -173,6 +173,14 @@ def im_enc(
         result["pending_intentions_hint"] = related_intentions
         _log(f"im_enc S06: {len(related_intentions)} related intention(s) detected for node {node.id[:8]}")
 
+    # FCM federation — emite evento após encode (SecureFCMBridge: dedup + TriggerDetector)
+    try:
+        from imi.integrations.fcm_security import SecureFCMBridge as _FCMBridge
+        _fcm = _FCMBridge(min_importance=2)
+        _fcm.emit_encode(node)
+    except Exception:
+        pass
+
     return json.dumps(result, ensure_ascii=False, indent=2)
 
 
