@@ -140,10 +140,18 @@ def im_enc(
         except ValueError:
             pass
 
-    node = space.encode(
-        experience, tags=tag_list, source=source,
-        context_hint=context_hint, timestamp=event_timestamp,
-    )
+    # Camada 1 — AIP Security: sanitização PII + crypto AES-256-GCM (opt-in via IMI_CRYPTO=1)
+    try:
+        from imi.integrations.crypto_layer import secure_encode
+        node = secure_encode(
+            space, experience, tags=tag_list, source=source,
+            context_hint=context_hint, timestamp=event_timestamp,
+        )
+    except ImportError:
+        node = space.encode(
+            experience, tags=tag_list, source=source,
+            context_hint=context_hint, timestamp=event_timestamp,
+        )
     node.occurred_at = occurred_float
 
     # IMI-E04 S06: Check for pending intentions with tag/keyword overlap
