@@ -174,7 +174,7 @@ def secure_encode(
     Wrapper seguro sobre space.encode().
 
     Pipeline:
-      experience → [sanitize PII] → [encrypt AES-256-GCM] → space.encode()
+      experience → [sanitize PII] → space.encode(plaintext) → [encrypt original at-rest]
 
     Se IMI_CRYPTO=0 (default): pass-through direto para space.encode().
     Se sanitizer ou crypto não disponíveis: falha graciosa, usa original.
@@ -229,18 +229,10 @@ def secure_encode(
         except Exception as e:
             logger.warning("crypto_layer: sanitizer falhou (%s), continuando sem sanitização", e)
 
-    # 2. Criptografia AES-256-GCM
-    key = _get_key()
-    if key and _crypto_ok:
-        try:
-            encrypted = encrypt_str(processed, key)
-            processed = _ENC_PREFIX + encrypted
-        except Exception as e:
-            logger.warning("crypto_layer: encrypt falhou (%s), armazenando plaintext", e)
-            # Falha graciosa: armazena o texto sanitizado (sem crypto)
-            # Melhor que perder a memória
-
-    # 3. Encode no IMI
+    # 2. Encode no IMI com plaintext sanitizado
+    #    Summarizers, embedder e seed recebem texto legível — nunca ciphertext.
+    #    Bug fix: antes, ciphertext ia para LLM summarizers que retornavam
+    #    "conteúdo criptografado" em vez de resumos úteis.
     node = space.encode(
         processed,
         tags=tags,
@@ -248,6 +240,15 @@ def secure_encode(
         context_hint=context_hint,
         timestamp=timestamp,
     )
+
+    # 3. Criptografia AES-256-GCM — protege apenas o campo original (at-rest)
+    key = _get_key()
+    if key and _crypto_ok:
+        try:
+            encrypted = encrypt_str(processed, key)
+            node.original = _ENC_PREFIX + encrypted
+        except Exception as e:
+            logger.warning("crypto_layer: encrypt falhou (%s), original permanece plaintext", e)
 
     # 4. Audit log (assíncrono — nunca bloqueia)
     try:

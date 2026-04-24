@@ -42,7 +42,7 @@ class MemoryNode:
     summary_detailed: str = ""  # ~100 tokens: technical summary
     seed: str = ""              # ~80 tokens: full reconstruction key
 
-    # Original experience (optional, can be discarded after encoding)
+    # Original experience (persisted; encrypted at-rest when IMI_CRYPTO=1)
     original: str | None = None
 
     # Embedding (for vector search)
@@ -141,6 +141,8 @@ class MemoryNode:
             "ds_d": self.ds_d,
             "entities": self.entities,
         }
+        if self.original is not None:
+            d["original"] = self.original
         if self.embedding is not None:
             d["embedding"] = self.embedding.tolist()
         return d
