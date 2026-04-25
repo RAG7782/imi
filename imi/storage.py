@@ -399,6 +399,8 @@ class SQLiteBackend(StorageBackend):
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA synchronous=NORMAL")
             self._conn.execute("PRAGMA cache_size=-64000")  # 64MB
+            # M9 fix: busy_timeout prevents immediate failure under write contention
+            self._conn.execute("PRAGMA busy_timeout=5000")  # 5s
         return self._conn
 
     def setup(self) -> None:
@@ -452,6 +454,11 @@ class SQLiteBackend(StorageBackend):
     def _fts_index_node(self, conn: Any, node: MemoryNode, store_name: str) -> None:
         if not self.enable_fts:
             return
+        # C3 fix: DELETE existing FTS entry before INSERT to prevent duplicates
+        conn.execute(
+            "DELETE FROM memory_fts WHERE node_id = ? AND store_name = ?",
+            (node.id, store_name),
+        )
         d = node.to_dict()
         conn.execute(
             "INSERT INTO memory_fts (node_id, store_name, seed, "
@@ -587,12 +594,14 @@ class SQLiteBackend(StorageBackend):
 
     @timed("sqlite.put_anchors")
     def put_anchors(self, anchors: dict[str, list[dict]]) -> None:
+        # H9 fix: use INSERT OR REPLACE instead of DELETE-all to avoid crash window
         conn = self._get_conn()
-        conn.execute("DELETE FROM anchors")
         for node_id, anchor_list in anchors.items():
+            # Remove old anchors for this node only
+            conn.execute("DELETE FROM anchors WHERE node_id = ?", (node_id,))
             for idx, anchor_data in enumerate(anchor_list):
                 conn.execute(
-                    "INSERT INTO anchors (node_id, anchor_idx, data) VALUES (?, ?, ?)",
+                    "INSERT OR REPLACE INTO anchors (node_id, anchor_idx, data) VALUES (?, ?, ?)",
                     (node_id, idx, json.dumps(anchor_data, ensure_ascii=False)),
                 )
         conn.commit()
@@ -759,13 +768,76 @@ class SQLiteBackend(StorageBackend):
         self, store_name: str, node_id: str
     ) -> list[MemoryNode]:
         conn = self._get_conn()
+        # H10 fix: filter out tombstones (is_deleted=1)
         rows = conn.execute(
             "SELECT data, embedding FROM memory_nodes "
-            "WHERE node_id = ? AND store_name = ? "
+            "WHERE node_id = ? AND store_name = ? AND NOT is_deleted "
             "ORDER BY version DESC",
             (node_id, store_name),
         ).fetchall()
         return [self._row_to_node(row) for row in rows]
+
+    # --- C2: Compaction utility ---
+
+    def compact_versions(self, keep_versions: int = 1) -> dict[str, int]:
+        """Remove old version rows, keeping only the latest N versions per node.
+
+        C2 fix: prevents unbounded DB growth from append-only versioning.
+        Returns {"deleted_rows": N, "vacuumed": bool}.
+
+        WARNING: This is destructive — old versions are irrecoverable.
+        Run with MCP server stopped for safety.
+        """
+        conn = self._get_conn()
+        # Count before
+        before = conn.execute("SELECT count(*) FROM memory_nodes").fetchone()[0]
+
+        # Delete all but the latest `keep_versions` per (node_id, store_name)
+        conn.execute(f"""
+            DELETE FROM memory_nodes WHERE rowid NOT IN (
+                SELECT rowid FROM (
+                    SELECT rowid, ROW_NUMBER() OVER (
+                        PARTITION BY node_id, store_name ORDER BY version DESC
+                    ) AS rn
+                    FROM memory_nodes
+                ) ranked
+                WHERE rn <= {keep_versions}
+            )
+        """)
+        conn.commit()
+
+        after = conn.execute("SELECT count(*) FROM memory_nodes").fetchone()[0]
+        deleted = before - after
+
+        # VACUUM to reclaim space
+        vacuumed = False
+        if deleted > 0:
+            try:
+                conn.execute("VACUUM")
+                vacuumed = True
+            except Exception as e:
+                logger.warning("compact_versions: VACUUM failed (%s)", e)
+
+        logger.info("compact_versions: deleted %d rows (before=%d after=%d)", deleted, before, after)
+        return {"deleted_rows": deleted, "vacuumed": vacuumed, "rows_before": before, "rows_after": after}
+
+    def rebuild_fts(self) -> int:
+        """Rebuild FTS index from current nodes. C3 fix companion.
+
+        Returns number of nodes indexed.
+        """
+        if not self.enable_fts:
+            return 0
+        conn = self._get_conn()
+        conn.execute("DELETE FROM memory_fts")
+        count = 0
+        for store_name in ("episodic", "semantic"):
+            for node in self.get_all_nodes(store_name):
+                self._fts_index_node(conn, node, store_name)
+                count += 1
+        conn.commit()
+        logger.info("rebuild_fts: indexed %d nodes", count)
+        return count
 
     # --- Export/Import ---
 

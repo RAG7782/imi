@@ -65,8 +65,28 @@ class FCMBridge:
     def __init__(self, source: str = "imi", trust_level: str = "self"):
         self.source = source
         self.trust_level = trust_level
-        self._consumed_ids: set[str] = set()
+        # M4 fix: persist consumed_ids to disk for cross-restart dedup
+        self._consumed_ids_file = FCM_DIR / "consumed_ids.json"
+        self._consumed_ids: set[str] = self._load_consumed_ids()
         self._ensure_dirs()
+
+    def _load_consumed_ids(self) -> set[str]:
+        """M4: Load consumed event IDs from disk."""
+        try:
+            if self._consumed_ids_file.exists():
+                data = json.loads(self._consumed_ids_file.read_text("utf-8"))
+                return set(data)
+        except Exception:
+            pass
+        return set()
+
+    def _save_consumed_ids(self) -> None:
+        """M4: Persist consumed IDs to disk (keep last 1000)."""
+        try:
+            ids = list(self._consumed_ids)[-1000:]  # cap at 1000
+            self._consumed_ids_file.write_text(json.dumps(ids), "utf-8")
+        except Exception:
+            pass
 
     def _ensure_dirs(self) -> None:
         FCM_EVENTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -130,6 +150,16 @@ class FCMBridge:
         title = getattr(node, "summary_orbital", "") or content[:80]
         node_id = getattr(node, "id", "")
 
+        # M1 fix: strip seed from FCM events when crypto is active
+        # to prevent leaking plaintext seed alongside encrypted original
+        imi_seed = getattr(node, "seed", "")
+        try:
+            from imi.integrations.crypto_layer import is_encrypted
+            if is_encrypted(content):
+                imi_seed = "[encrypted]"
+        except ImportError:
+            pass
+
         event = {
             "id": str(uuid.uuid4()),
             "timestamp": _iso_now(),
@@ -141,7 +171,7 @@ class FCMBridge:
             "salience": salience,
             "metadata": {
                 "imi_node_id": node_id,
-                "imi_seed": getattr(node, "seed", ""),
+                "imi_seed": imi_seed,
                 "trust_level": self.trust_level,
             },
         }
@@ -228,6 +258,8 @@ class FCMBridge:
         try:
             data = json.loads(src.read_text("utf-8"))
             self._consumed_ids.add(data.get("id", ""))
+            # M4 fix: persist consumed IDs to disk
+            self._save_consumed_ids()
         except (json.JSONDecodeError, OSError):
             pass
 

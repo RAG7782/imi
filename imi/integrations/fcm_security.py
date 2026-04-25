@@ -112,7 +112,9 @@ class SecureFCMBridge(FCMBridge):
     def _is_duplicate(self, content: str) -> bool:
         """Retorna True se conteúdo idêntico foi emitido na janela de dedup."""
         h = _content_hash(content, self.source)
-        now = time.monotonic()
+        # M5 fix: use time.time() instead of time.monotonic() so dedup
+        # window survives across restarts (monotonic resets on restart)
+        now = time.time()
 
         # Limpar entradas expiradas (máx 500 itens)
         if len(self._dedup_cache) > 500:
@@ -144,7 +146,8 @@ class SecureFCMBridge(FCMBridge):
           4. Verifica dedup SHA-256
           5. Delega para FCMBridge.emit_encode() com tags enriquecidas
         """
-        content = getattr(node, "original", "") or getattr(node, "seed", "")
+        # M2 fix: use seed (always plaintext) instead of original (may be ciphertext)
+        content = getattr(node, "seed", "") or getattr(node, "summary_medium", "")
         if not content:
             return None
 

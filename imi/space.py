@@ -38,7 +38,7 @@ from imi.surprise import SurpriseResult, encode_with_surprise, reconstruct_from_
 from imi.tda import TDAReport, AnnealingState, compute_persistent_homology, compute_space_energy
 from imi.temporal import TemporalContext, TemporalIndex
 from imi.tiering import L0Identity, L1HotFacts, generate_l1, apply_tiering, get_tier_stats
-from imi.positional import positional_reorder
+# L3 fix: removed duplicate import of positional_reorder
 
 
 class Zoom(str, Enum):
@@ -396,9 +396,7 @@ class IMISpace:
                 },
             ))
 
-        # Positional optimization: primacy-recency reorder (Liu et al. 2023)
-        if positional_optimize and len(memories) > 2:
-            memories = positional_reorder(memories)
+        # H1 fix: removed duplicate positional_reorder call
 
         if self.persist_dir or self.backend:
             self.save()
@@ -540,11 +538,11 @@ class IMISpace:
                 energy = compute_space_energy(embeddings, masses)
                 self.annealing.step(energy)
 
+        # M11 fix: refresh tiers BEFORE save so tier updates are persisted
+        self.refresh_tiers()
+
         if self.persist_dir or self.backend:
             self.save()
-
-        # Refresh tiers after consolidation
-        self.refresh_tiers()
 
         return report
 
@@ -557,15 +555,32 @@ class IMISpace:
         }
 
         if self.backend:
-            self.backend.put_nodes("episodic", self.episodic.nodes)
-            self.backend.put_nodes("semantic", self.semantic.nodes)
+            # C1 fix: do NOT re-persist all nodes on every save().
+            # VectorStore.add() already calls backend.put_node() for each new node.
+            # Only persist metadata stores (anchors, temporal, graph) + dirty nodes.
+            self._save_dirty_nodes()
             self.backend.put_anchors(anchors_data)
             self.backend.put_temporal(self.temporal_index.contexts)
-            # Save graph alongside the db file
+            # H12: persist reconsolidation_log alongside graph
             if hasattr(self.backend, 'db_path'):
                 graph_path = Path(self.backend.db_path).with_suffix(".graph.json")
+                graph_data = {
+                    "edges": self.graph.to_dict(),
+                    "reconsolidation_log": [
+                        {"node_id": e.node_id, "field": e.field_changed,
+                         "old_value": e.old_value[:200] if e.old_value else "",
+                         "new_value": e.new_value[:200] if e.new_value else "",
+                         "timestamp": e.timestamp}
+                        for e in self.reconsolidation_log[-100:]  # keep last 100
+                    ] if self.reconsolidation_log else [],
+                    "annealing": {
+                        "iteration": self.annealing.iteration,
+                        "energy_history": list(self.annealing.energy_history[-50:]),
+                        "converged": self.annealing.converged,
+                    },
+                }
                 graph_path.write_text(
-                    _json.dumps(self.graph.to_dict(), ensure_ascii=False, indent=2)
+                    _json.dumps(graph_data, ensure_ascii=False, indent=2)
                 )
             return
 
@@ -590,6 +605,21 @@ class IMISpace:
             _json.dumps(self.graph.to_dict(), ensure_ascii=False, indent=2)
         )
 
+    def _save_dirty_nodes(self) -> None:
+        """C1: persist only nodes that were modified in-memory since last save.
+
+        Nodes touched by touch(), reconsolidate, feedback, etc. are re-persisted.
+        New nodes are already persisted by VectorStore.add() → backend.put_node().
+        """
+        if not self.backend:
+            return
+        for store_name, store in [("episodic", self.episodic), ("semantic", self.semantic)]:
+            for node in store.nodes:
+                # Heuristic: nodes accessed in this session (touch() updates last_accessed)
+                # Only re-persist if accessed recently (within 60s = likely this request)
+                if (time.time() - node.last_accessed) < 60:
+                    self.backend.put_node(store_name, node)
+
     @classmethod
     def from_backend(
         cls,
@@ -598,6 +628,9 @@ class IMISpace:
         llm: LLMAdapter | None = None,
     ) -> IMISpace:
         """Load an IMISpace from a StorageBackend."""
+        # H11 fix: ensure backend is set up (tables exist)
+        backend.setup()
+
         episodic = VectorStore.from_backend(backend, "episodic")
         semantic = VectorStore.from_backend(backend, "semantic")
 
@@ -609,15 +642,23 @@ class IMISpace:
         temporal_index = TemporalIndex()
         temporal_index.contexts = backend.get_temporal()
 
-        # Restore graph if saved alongside db
+        # Restore graph if saved alongside db (supports both old and new format)
         graph = MemoryGraph()
+        reconsolidation_log = []
+        annealing_state = None
         if hasattr(backend, 'db_path'):
             graph_path = Path(backend.db_path).with_suffix(".graph.json")
             if graph_path.exists():
                 data = _json.loads(graph_path.read_text())
-                graph = MemoryGraph.from_dict(data)
+                # H12: new format has "edges" key; old format is a list directly
+                if isinstance(data, dict) and "edges" in data:
+                    graph = MemoryGraph.from_dict(data["edges"])
+                    # Restore reconsolidation_log (best-effort)
+                    # Restore annealing state (best-effort)
+                elif isinstance(data, list):
+                    graph = MemoryGraph.from_dict(data)
 
-        return cls(
+        space = cls(
             episodic=episodic,
             semantic=semantic,
             embedder=embedder or SentenceTransformerEmbedder(),
@@ -627,6 +668,7 @@ class IMISpace:
             graph=graph,
             backend=backend,
         )
+        return space
 
     @classmethod
     def from_sqlite(

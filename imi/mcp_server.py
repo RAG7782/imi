@@ -23,12 +23,16 @@ mcp = FastMCP("imi", port=int(os.environ.get("IMI_PORT", "8080")))
 
 # --- Singleton with TTL + diagnostics (IMI-E05 S01/S02/S05) ---
 
+import threading
+
 _space = None
 _space_loaded_at: float = 0.0
 _sqlite_load_count: int = 0
 _nav_latencies: list[float] = []   # ring buffer p50/p95
 _SPACE_TTL = float(os.environ.get("IMI_SPACE_TTL", "3600"))  # 1h default
 _LOG_FILE = Path.home() / ".claude" / "imi_boot.log"
+# H13 fix: RLock for thread-safe singleton access
+_space_lock = threading.RLock()
 
 
 def _log(msg: str) -> None:
@@ -55,21 +59,23 @@ def _percentile(data: list[float], pct: int) -> float | None:
 
 
 def _get_space():
+    # H13 fix: thread-safe singleton with RLock
     global _space, _space_loaded_at, _sqlite_load_count
-    now = _time_module.monotonic()
-    if _space is None or (now - _space_loaded_at) > _SPACE_TTL:
-        t0 = _time_module.monotonic()
-        from imi.space import IMISpace
-        db_path = os.environ.get("IMI_DB", "imi_memory.db")
-        _space = IMISpace.from_sqlite(db_path)
-        _space_loaded_at = now
-        _sqlite_load_count += 1
-        elapsed = (_time_module.monotonic() - t0) * 1000
-        _log(
-            f"from_sqlite() #{_sqlite_load_count} — {elapsed:.1f}ms | "
-            f"episodic={len(_space.episodic.nodes)} semantic={len(_space.semantic.nodes)}"
-        )
-    return _space
+    with _space_lock:
+        now = _time_module.monotonic()
+        if _space is None or (now - _space_loaded_at) > _SPACE_TTL:
+            t0 = _time_module.monotonic()
+            from imi.space import IMISpace
+            db_path = os.environ.get("IMI_DB", "imi_memory.db")
+            _space = IMISpace.from_sqlite(db_path)
+            _space_loaded_at = now
+            _sqlite_load_count += 1
+            elapsed = (_time_module.monotonic() - t0) * 1000
+            _log(
+                f"from_sqlite() #{_sqlite_load_count} — {elapsed:.1f}ms | "
+                f"episodic={len(_space.episodic.nodes)} semantic={len(_space.semantic.nodes)}"
+            )
+        return _space
 
 # --- Tools (CoD Pass 2 descriptions) ---
 
@@ -185,7 +191,13 @@ def im_enc(
 
 
 def _mw_score_from_node(node) -> float:
-    """Extrai Memory Worth score do seed JSON do nó. Retorna 0.5 (neutral) se não existe."""
+    """Extrai Memory Worth score do nó. Retorna 0.5 (neutral) se não existe.
+    H2: reads from mw_data first (new schema), falls back to seed (legacy).
+    """
+    # New schema: mw_data dict
+    if hasattr(node, 'mw_data') and node.mw_data and "mw_score" in node.mw_data:
+        return float(node.mw_data["mw_score"])
+    # Legacy: mw_score in seed JSON
     try:
         if node.seed:
             d = json.loads(node.seed)
@@ -354,7 +366,8 @@ def im_glnk(source_id: str, target_id: str, edge_type: str = "causal", label: st
     type_map = {"causal": EdgeType.CAUSAL, "co_occurrence": EdgeType.CO_OCCURRENCE, "similar": EdgeType.SIMILAR}
     et = type_map.get(edge_type, EdgeType.CAUSAL)
     space.graph.add_edge(source_id, target_id, et, label=label)
-    if space.persist_dir: space.save()
+    # H3 fix: save if EITHER persist_dir OR backend is set
+    if space.persist_dir or space.backend: space.save()
     return json.dumps({
         "status": "ok", "edge": f"{source_id} --[{edge_type}]--> {target_id}",
         "label": label, "total_edges": space.graph.stats()["total_edges"],
@@ -462,9 +475,11 @@ def im_int_fulfill(
     space = _get_space()
 
     # Busca o nó pelo ID (episodic store — in-memory first, then backend)
+    in_memory = True
     node = space.episodic.get(intent_id)
     if node is None:
         node = space.backend.get_node("episodic", intent_id)
+        in_memory = False
 
     if node is None:
         return json.dumps({"error": f"intent_id not found: {intent_id}"}, ensure_ascii=False)
@@ -487,6 +502,11 @@ def im_int_fulfill(
 
     # Persiste atualização
     space.backend.put_node("episodic", node)
+
+    # M8 fix: if node was only in backend (not in-memory), update in-memory store
+    if not in_memory:
+        space.episodic.nodes.append(node)
+        space.episodic._dirty = True
 
     # Cria edge causal se fulfilled_by é node_id válido
     edge_created = False
@@ -697,24 +717,33 @@ def im_mw_update(
             not_found.append(node_id)
             continue
 
-        # MW counters vivem no JSON do seed/data (schema-free — sem ALTER TABLE)
-        try:
-            seed_data = json.loads(node.seed) if node.seed else {}
-        except Exception:
-            seed_data = {}
+        # H2 fix: MW counters live in node.mw_data (separate from seed)
+        # This prevents destroying the LLM reconstruction key in node.seed.
+        # Backward compat: migrate from seed if mw_data doesn't exist yet.
+        if node.mw_data is None:
+            # Try to migrate existing MW data from seed (if it was stored there)
+            try:
+                seed_data = json.loads(node.seed) if node.seed else {}
+                if any(k.startswith("mw_") for k in seed_data):
+                    node.mw_data = {k: v for k, v in seed_data.items() if k.startswith("mw_")}
+                    # Clean MW keys from seed to prevent future confusion
+                    clean_seed = {k: v for k, v in seed_data.items() if not k.startswith("mw_")}
+                    node.seed = json.dumps(clean_seed, ensure_ascii=False) if clean_seed else node.seed
+                else:
+                    node.mw_data = {}
+            except Exception:
+                node.mw_data = {}
 
         if outcome == "success":
-            seed_data["mw_success"] = seed_data.get("mw_success", 0) + 1
+            node.mw_data["mw_success"] = node.mw_data.get("mw_success", 0) + 1
         else:
-            seed_data["mw_failure"] = seed_data.get("mw_failure", 0) + 1
+            node.mw_data["mw_failure"] = node.mw_data.get("mw_failure", 0) + 1
 
-        sc = seed_data.get("mw_success", 0)
-        fc = seed_data.get("mw_failure", 0)
+        sc = node.mw_data.get("mw_success", 0)
+        fc = node.mw_data.get("mw_failure", 0)
         mw = sc / max(1, sc + fc)
-        seed_data["mw_score"] = round(mw, 4)
-        seed_data["mw_last_updated"] = _time_module.time()
-
-        node.seed = json.dumps(seed_data, ensure_ascii=False)
+        node.mw_data["mw_score"] = round(mw, 4)
+        node.mw_data["mw_last_updated"] = _time_module.time()
         updated[node_id] = round(mw, 4)
 
     if updated:
@@ -734,24 +763,63 @@ def im_mw_update(
 @mcp.tool()
 def im_perf() -> str:
     """MCP server performance metrics and health check (IMI-E05 S05)"""
-    space_ok = _space is not None
+    # L5 fix: use _get_space() instead of _space directly
+    space = _get_space()
+    space_ok = space is not None
     age = (_time_module.monotonic() - _space_loaded_at) if space_ok else None
+
+    # Phase 5 monitoring: DB health metrics
+    db_health = {}
+    if space_ok and space.backend and hasattr(space.backend, '_get_conn'):
+        try:
+            conn = space.backend._get_conn()
+            # Versions per node (C1 indicator)
+            row = conn.execute(
+                "SELECT CAST(count(*) AS REAL) / CAST(max(count(DISTINCT node_id), 1) AS REAL) "
+                "FROM memory_nodes WHERE NOT is_deleted"
+            ).fetchone()
+            db_health["versions_per_node"] = round(row[0], 2) if row else None
+            # FTS row count (C3 indicator)
+            try:
+                fts_row = conn.execute("SELECT count(*) FROM memory_fts").fetchone()
+                db_health["fts_row_count"] = fts_row[0] if fts_row else 0
+            except Exception:
+                db_health["fts_row_count"] = "n/a"
+            # DB file size
+            try:
+                import os as _os
+                db_path = space.backend.db_path
+                db_health["db_size_mb"] = round(_os.path.getsize(db_path) / (1024 * 1024), 1)
+            except Exception:
+                db_health["db_size_mb"] = "n/a"
+            # Total rows
+            total_row = conn.execute("SELECT count(*) FROM memory_nodes").fetchone()
+            db_health["total_rows"] = total_row[0] if total_row else 0
+            distinct_row = conn.execute("SELECT count(DISTINCT node_id) FROM memory_nodes").fetchone()
+            db_health["distinct_nodes"] = distinct_row[0] if distinct_row else 0
+        except Exception as e:
+            db_health["error"] = str(e)
+
     result = {
         "space_loaded": space_ok,
         "space_age_seconds": round(age, 1) if age is not None else None,
         "space_ttl_seconds": _SPACE_TTL,
-        "episodic_count": len(_space.episodic.nodes) if space_ok else 0,
-        "semantic_count": len(_space.semantic.nodes) if space_ok else 0,
+        "episodic_count": len(space.episodic.nodes) if space_ok else 0,
+        "semantic_count": len(space.semantic.nodes) if space_ok else 0,
         "from_sqlite_calls_this_session": _sqlite_load_count,
         "nav_samples": len(_nav_latencies),
         "p50_nav_ms": _percentile(_nav_latencies, 50),
         "p95_nav_ms": _percentile(_nav_latencies, 95),
+        "db_health": db_health,
         "verdict": (
             "OK — singleton ativo, latência nominal"
             if _sqlite_load_count <= 1 and (_percentile(_nav_latencies, 95) or 0) < 500
             else "WARN — checar log ~/.claude/imi_boot.log"
         ),
     }
+    # Phase 5: alert if dirty tracking failed
+    if db_health.get("versions_per_node", 0) > 2:
+        result["alert"] = "versions_per_node > 2 — dirty tracking may have failed"
     return json.dumps(result, ensure_ascii=False, indent=2)
 
 

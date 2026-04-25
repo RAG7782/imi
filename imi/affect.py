@@ -79,19 +79,24 @@ class AffectiveTag:
         self.salience = min(0.95, self._base_salience + boost)
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "salience": self.salience,
             "valence": self.valence,
             "arousal": self.arousal,
         }
+        # H5: persist _base_salience to prevent upward drift on reload
+        if self._base_salience >= 0:
+            d["_base_salience"] = self._base_salience
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> AffectiveTag:
-        # _base_salience não é persistido — será capturado no primeiro update_dynamic
+        # H5: restore _base_salience if persisted; tolerates unknown keys (L2-style guard)
         return cls(
             salience=d.get("salience", 0.5),
             valence=d.get("valence", 0.0),
             arousal=d.get("arousal", 0.5),
+            _base_salience=d.get("_base_salience", -1.0),
         )
 
     def __str__(self) -> str:

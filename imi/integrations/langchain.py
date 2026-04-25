@@ -82,11 +82,16 @@ class IMIMemory:
 
     @classmethod
     def from_sqlite(cls, db_path: str, **kwargs) -> IMIMemory:
-        """Create IMIMemory backed by SQLite persistence."""
+        """Create IMIMemory backed by SQLite persistence.
+
+        M12 fix: only use JSON load if persist_dir exists AND is a directory.
+        A file with the same stem (e.g., 'agent' for 'agent.db') would
+        incorrectly trigger the JSON path.
+        """
         from imi.space import IMISpace
 
         persist_dir = Path(db_path).with_suffix("")
-        if persist_dir.exists():
+        if persist_dir.exists() and persist_dir.is_dir():
             space = IMISpace.load(persist_dir)
         else:
             space = IMISpace.from_sqlite(db_path)

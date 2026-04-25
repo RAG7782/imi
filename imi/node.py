@@ -78,6 +78,9 @@ class MemoryNode:
     tier: int = 3  # Default: L3 (deep). 0=identity, 1=hot facts, 2=filtered, 3=deep
     tier_updated_at: float = 0.0
 
+    # Schema v2: MW data (H2 fix — separate from seed)
+    mw_data: dict | None = None
+
     # SDE-AAAK Dialect (metadata layer)
     sde_tag: str = ""       # Rendered SDE-AAAK tag string
     ds_d: float = 0.0       # Distributional semiotic density score (0-1)
@@ -141,6 +144,8 @@ class MemoryNode:
             "ds_d": self.ds_d,
             "entities": self.entities,
         }
+        if self.mw_data is not None:
+            d["mw_data"] = self.mw_data
         if self.original is not None:
             d["original"] = self.original
         if self.embedding is not None:
@@ -149,13 +154,21 @@ class MemoryNode:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> MemoryNode:
-        """Deserialize from persistence."""
+        """Deserialize from persistence.
+
+        C4 fix: uses d.copy() to avoid mutating the caller's dict.
+        Schema v2: tolerates unknown keys gracefully.
+        """
+        d = d.copy()  # C4: never mutate caller's dict
         emb = d.pop("embedding", None)
         affect_d = d.pop("affect", {})
         temporal_d = d.pop("temporal", {})
         affordances_d = d.pop("affordances", [])
+        mw_data = d.pop("mw_data", None)
 
-        node = cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
+        # M13: filter to known fields only (forward-compatible)
+        known = {k: v for k, v in d.items() if k in cls.__dataclass_fields__}
+        node = cls(**known)
         if emb is not None:
             node.embedding = np.array(emb, dtype=np.float32)
         if affect_d:
@@ -164,4 +177,6 @@ class MemoryNode:
             node.temporal = TemporalContext.from_dict(temporal_d)
         if affordances_d:
             node.affordances = [Affordance.from_dict(a) for a in affordances_d]
+        if mw_data is not None:
+            node.mw_data = mw_data
         return node

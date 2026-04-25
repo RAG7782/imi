@@ -95,25 +95,25 @@ class MaintenanceReport:
         )
 
 
-def fade(
+def count_fadeable(
     store: VectorStore,
-    decay_rate: float = 0.95,
     min_relevance: float = 0.1,
 ) -> int:
-    """Apply temporal fade to all nodes.
+    """L4 fix: renamed from fade() — this only COUNTS, does not modify.
 
-    Older, unaccessed nodes lose relevance naturally.
-    Returns count of nodes that fell below min_relevance.
+    Returns count of nodes that fell below min_relevance (>30 days old).
+    Relevance decays naturally via the recency component.
     """
     faded = 0
     for node in store.nodes:
-        # Don't directly modify access_count — relevance is computed
-        # from recency + frequency. Fade happens naturally.
-        # But we can explicitly mark very old memories.
         days_since = (time.time() - node.last_accessed) / 86400
         if days_since > 30 and node.relevance < min_relevance:
             faded += 1
     return faded
+
+
+# Keep backward-compatible alias
+fade = count_fadeable
 
 
 def find_clusters(
@@ -213,7 +213,16 @@ def consolidate(
                     },
                 ))
         else:
-            # Wrap pattern as MemoryNode for storage in VectorStore
+            # H7 fix: patterns inherit aggregated affect/mass from source episodes
+            from imi.affect import AffectiveTag
+            avg_salience = sum(n.affect.salience for n in cluster if n.affect) / max(len(cluster), 1)
+            avg_valence = sum(n.affect.valence for n in cluster if n.affect) / max(len(cluster), 1)
+            avg_arousal = sum(n.affect.arousal for n in cluster if n.affect) / max(len(cluster), 1)
+            total_mass = sum(n.mass for n in cluster)
+            total_affordances = []
+            for n in cluster:
+                total_affordances.extend(n.affordances[:2])  # top 2 per source
+
             pattern_node = MemoryNode(
                 id=pattern.id,
                 summary_orbital=f"[PATTERN] {pattern_summary[:50]}",
@@ -223,6 +232,13 @@ def consolidate(
                 embedding=pattern_emb,
                 tags=all_tags + ["_pattern"],
                 source=f"consolidated from {pattern.source_count} episodes",
+                affect=AffectiveTag(
+                    salience=avg_salience,
+                    valence=avg_valence,
+                    arousal=avg_arousal,
+                ),
+                mass=min(total_mass / len(cluster) * 1.2, 10.0),  # slight boost for patterns
+                affordances=total_affordances[:4],  # cap at 4
             )
             semantic_store.add(pattern_node)
             new_patterns.append(pattern)
@@ -277,7 +293,7 @@ def run_maintenance(
     else:
         consolidated = 0
 
-    # 4. Prune: mark very old low-relevance episodic nodes
+    # 4. Prune: H6 fix — actually remove very old low-relevance episodic nodes
     pruned = 0
     for node in list(episodic.nodes):
         if node.relevance < 0.05 and "_keep" not in node.tags:
@@ -289,6 +305,8 @@ def run_maintenance(
                     store_name="episodic",
                     metadata={"relevance": node.relevance},
                 ))
+            # H6 fix: actually remove the node from the episodic store
+            episodic.remove(node.id)
 
     duration_ms = (time.time() - t0) * 1000
 

@@ -117,16 +117,17 @@ def _get_key() -> Optional[bytes]:
         logger.info("crypto_layer: chave derivada de IMI_CRYPTO_SECRET (fp: %s)", _KEY_FINGERPRINT)
         return _KEY
 
-    # Opção 3: ephemeral (aviso explícito — não persiste)
-    _KEY = generate_key()
-    _KEY_FINGERPRINT = key_fingerprint(_KEY)
-    logger.warning(
-        "crypto_layer: chave EPHEMERAL gerada (fp: %s). "
-        "Memórias desta sessão NÃO serão decriptáveis após reinício. "
-        "Defina IMI_CRYPTO_KEY ou IMI_CRYPTO_SECRET para persistência.",
-        _KEY_FINGERPRINT
+    # M3 fix: refuse to start with ephemeral key — data would be lost on restart
+    # Raise explicit error instead of silently generating unrecoverable key
+    logger.error(
+        "crypto_layer: IMI_CRYPTO=1 mas nenhuma chave configurada. "
+        "Defina IMI_CRYPTO_KEY (hex 64 chars) ou IMI_CRYPTO_SECRET (senha). "
+        "Recusando iniciar com chave ephemeral para evitar perda de dados."
     )
-    return _KEY
+    raise RuntimeError(
+        "IMI_CRYPTO=1 requires IMI_CRYPTO_KEY or IMI_CRYPTO_SECRET. "
+        "Refusing ephemeral key to prevent data loss on restart."
+    )
 
 
 # ─── Prefixo de identificação ──────────────────────────────────────────────
@@ -317,9 +318,9 @@ if __name__ == "__main__":
     os.environ["IMI_CRYPTO"] = "1"
     os.environ["IMI_CRYPTO_SECRET"] = "imi-test-2026"
 
-    # Reimportar com env vars ativas
-    _CRYPTO_ENABLED = True
-    _KEY = None  # forçar reinit
+    # M14 fix: reassign module-level vars for test mode
+    _CRYPTO_ENABLED = True  # noqa: F841 — needed for test
+    _KEY = None  # forçar reinit  # noqa: F841
 
     print("=== IMI Crypto Layer — Teste ===")
     print()

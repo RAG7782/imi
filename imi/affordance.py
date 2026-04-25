@@ -33,7 +33,9 @@ class Affordance:
 
     @classmethod
     def from_dict(cls, d: dict) -> Affordance:
-        return cls(**d)
+        # L2 fix: field guard — only pass known fields to avoid TypeError on future keys
+        known = {"action", "confidence", "conditions", "domain"}
+        return cls(**{k: v for k, v in d.items() if k in known})
 
     def __str__(self) -> str:
         return f"[{self.confidence:.0%}] {self.action} (when: {self.conditions})"

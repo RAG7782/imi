@@ -343,9 +343,24 @@ class MemoryGraph:
 
     @classmethod
     def from_dict(cls, edges: list[dict]) -> MemoryGraph:
+        """H4 fix: reconstruct both directions for bidirectional edges.
+
+        to_dict() deduplicates by (source, target, type), so from_dict()
+        must reconstruct the reverse direction to restore bidirectionality.
+        """
         graph = cls()
         for d in edges:
             edge = Edge.from_dict(d)
             graph._outgoing[edge.source_id].append(edge)
             graph._incoming[edge.target_id].append(edge)
+            # H4: reconstruct reverse direction (to_dict deduped it)
+            reverse = Edge(
+                source_id=edge.target_id,
+                target_id=edge.source_id,
+                edge_type=edge.edge_type,
+                weight=edge.weight,
+                label=edge.label,
+            )
+            graph._outgoing[edge.target_id].append(reverse)
+            graph._incoming[edge.source_id].append(reverse)
         return graph

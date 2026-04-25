@@ -65,8 +65,12 @@ class Anchor:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Anchor:
+        # H8 fix: copy dict to avoid mutating caller's data
+        d = d.copy()
         d["type"] = AnchorType(d["type"])
-        return cls(**d)
+        # Field guard: only pass known fields
+        known = {"type", "reference", "snapshot", "hash", "verified_at"}
+        return cls(**{k: v for k, v in d.items() if k in known})
 
 
 @dataclass

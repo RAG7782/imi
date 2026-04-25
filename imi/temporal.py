@@ -51,7 +51,9 @@ class TemporalContext:
 
     @classmethod
     def from_dict(cls, d: dict) -> TemporalContext:
-        return cls(**d)
+        # L1 fix: field guard — only pass known fields to avoid TypeError on future keys
+        known = {"timestamp", "session_id", "sequence_pos", "temporal_neighbors"}
+        return cls(**{k: v for k, v in d.items() if k in known})
 
 
 @dataclass
