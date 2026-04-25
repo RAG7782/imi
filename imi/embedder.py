@@ -1,11 +1,20 @@
-"""Embedding adapter — generates vector representations of text."""
+"""Embedding adapter — generates vector representations of text.
+
+Backends:
+  - SentenceTransformerEmbedder: local via sentence-transformers (default)
+  - OllamaEmbedder: via Ollama API (all-minilm, nomic-embed-text, etc.)
+"""
 
 from __future__ import annotations
 
+import logging
+import os
 from dataclasses import dataclass, field
 from typing import Protocol
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 class Embedder(Protocol):
@@ -46,3 +55,93 @@ class SentenceTransformerEmbedder:
     def embed_batch(self, texts: list[str]) -> np.ndarray:
         self._load()
         return self._model.encode(texts, normalize_embeddings=True)
+
+
+@dataclass
+class OllamaEmbedder:
+    """Embedding via Ollama API — no sentence-transformers dependency needed.
+
+    Uses Ollama's /api/embed endpoint. Default model: all-minilm (384d).
+    Note: all-minilm has a practical input limit of ~400 chars.
+
+    Usage::
+
+        embedder = OllamaEmbedder()  # defaults to localhost:11434
+        vec = embedder.embed("hello world")
+
+        # VPS alan:
+        embedder = OllamaEmbedder(base_url="http://100.73.123.8:11434")
+    """
+
+    model_name: str = "all-minilm"
+    base_url: str = ""
+    _dims: int = field(default=0, repr=False)
+    _max_chars: int = field(default=400, repr=False)
+
+    def __post_init__(self):
+        if not self.base_url:
+            self.base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+            # Strip /v1 suffix if present (Ollama native API doesn't use it)
+            self.base_url = self.base_url.rstrip("/").removesuffix("/v1")
+
+    def _request_embed(self, input_data: str | list[str]) -> list[list[float]]:
+        """Call Ollama /api/embed endpoint."""
+        import urllib.request
+        import json
+
+        payload = json.dumps({
+            "model": self.model_name,
+            "input": input_data,
+        }).encode()
+
+        req = urllib.request.Request(
+            f"{self.base_url}/api/embed",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read())
+
+        embeddings = data.get("embeddings", [])
+        if not embeddings:
+            raise RuntimeError(f"Ollama returned no embeddings for model {self.model_name}")
+
+        if self._dims == 0:
+            self._dims = len(embeddings[0])
+
+        return embeddings
+
+    def _truncate(self, text: str) -> str:
+        """Truncate to max_chars to avoid Ollama errors on long input."""
+        if len(text) > self._max_chars:
+            logger.debug(
+                "OllamaEmbedder: truncating %d chars to %d", len(text), self._max_chars
+            )
+            return text[: self._max_chars]
+        return text
+
+    @property
+    def dimensions(self) -> int:
+        if self._dims == 0:
+            # Probe with a short string to discover dimensions
+            self._request_embed("hello")
+        return self._dims
+
+    def embed(self, text: str) -> np.ndarray:
+        text = self._truncate(text)
+        vecs = self._request_embed(text)
+        arr = np.array(vecs[0], dtype=np.float32)
+        norm = np.linalg.norm(arr)
+        if norm > 0:
+            arr /= norm
+        return arr
+
+    def embed_batch(self, texts: list[str]) -> np.ndarray:
+        texts = [self._truncate(t) for t in texts]
+        vecs = self._request_embed(texts)
+        arr = np.array(vecs, dtype=np.float32)
+        norms = np.linalg.norm(arr, axis=1, keepdims=True)
+        norms[norms == 0] = 1
+        arr /= norms
+        return arr
