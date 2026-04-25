@@ -650,6 +650,8 @@ def im_feedback(
         # neutral: sem mudança em affect, mas touch() registra o acesso
 
         node.touch()  # registra acesso + boost logarítmico via update_dynamic
+        if hasattr(space, "mark_node_dirty"):
+            space.mark_node_dirty(node)
 
         updated.append({
             "id": node_id,
@@ -707,12 +709,26 @@ def im_mw_update(
     space = _get_space()
     updated: dict[str, float] = {}
     not_found: list[str] = []
+    modified_nodes: list[tuple[str, object]] = []
 
     for node_id in node_ids:
-        node = space.episodic.get(node_id) or space.semantic.get(node_id)
+        store_name = ""
+        node = space.episodic.get(node_id)
+        if node is not None:
+            store_name = "episodic"
+        if node is None:
+            node = space.semantic.get(node_id)
+            if node is not None:
+                store_name = "semantic"
         if node is None:
             # Tentar via backend direto
-            node = space.backend.get_node("episodic", node_id) or space.backend.get_node("semantic", node_id)
+            node = space.backend.get_node("episodic", node_id)
+            if node is not None:
+                store_name = "episodic"
+            else:
+                node = space.backend.get_node("semantic", node_id)
+                if node is not None:
+                    store_name = "semantic"
         if node is None:
             not_found.append(node_id)
             continue
@@ -745,9 +761,13 @@ def im_mw_update(
         node.mw_data["mw_score"] = round(mw, 4)
         node.mw_data["mw_last_updated"] = _time_module.time()
         updated[node_id] = round(mw, 4)
+        modified_nodes.append((store_name, node))
 
     if updated:
-        space.save()
+        # Nodes loaded directly from backend may not be present in-memory; persist them
+        # explicitly instead of depending on IMISpace dirty tracking.
+        for store_name, node in modified_nodes:
+            space.backend.put_node(store_name, node)
 
     _log(f"im_mw_update outcome={outcome} | updated={len(updated)} not_found={len(not_found)} session={session_id}")
 

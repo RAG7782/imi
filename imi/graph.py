@@ -349,11 +349,23 @@ class MemoryGraph:
         must reconstruct the reverse direction to restore bidirectionality.
         """
         graph = cls()
+        input_keys = set()
         for d in edges:
             edge = Edge.from_dict(d)
+            key = (edge.source_id, edge.target_id, edge.edge_type.value)
+            if key in input_keys:
+                continue
+            input_keys.add(key)
             graph._outgoing[edge.source_id].append(edge)
             graph._incoming[edge.target_id].append(edge)
-            # H4: reconstruct reverse direction (to_dict deduped it)
+
+        existing_keys = set(input_keys)
+        for d in edges:
+            edge = Edge.from_dict(d)
+            reverse_key = (edge.target_id, edge.source_id, edge.edge_type.value)
+            if reverse_key in existing_keys:
+                continue
+            # H4: reconstruct reverse direction for legacy one-way payloads.
             reverse = Edge(
                 source_id=edge.target_id,
                 target_id=edge.source_id,
@@ -363,4 +375,5 @@ class MemoryGraph:
             )
             graph._outgoing[edge.target_id].append(reverse)
             graph._incoming[edge.source_id].append(reverse)
+            existing_keys.add(reverse_key)
         return graph

@@ -118,6 +118,10 @@ class IMISpace:
     # Persistence
     persist_dir: Path | None = None
     backend: StorageBackend | None = None
+    _dirty_node_ids: dict[str, set[str]] = field(
+        default_factory=lambda: {"episodic": set(), "semantic": set()},
+        repr=False,
+    )
 
     def __post_init__(self) -> None:
         if self.backend:
@@ -130,6 +134,24 @@ class IMISpace:
         self._l0: L0Identity = L0Identity.load()
         self._l1_cache: L1HotFacts | None = None
         self._l1_domain: str | None = None
+
+    def mark_dirty(self, store_name: str, node_id: str) -> None:
+        """Mark a persisted node as modified since its last backend write."""
+        if store_name not in self._dirty_node_ids:
+            self._dirty_node_ids[store_name] = set()
+        self._dirty_node_ids[store_name].add(node_id)
+
+    def _store_name_for_node(self, node: MemoryNode) -> str | None:
+        if any(n.id == node.id for n in self.episodic.nodes):
+            return "episodic"
+        if any(n.id == node.id for n in self.semantic.nodes):
+            return "semantic"
+        return None
+
+    def mark_node_dirty(self, node: MemoryNode) -> None:
+        store_name = self._store_name_for_node(node)
+        if store_name:
+            self.mark_dirty(store_name, node.id)
 
     def _llm(self) -> LLMAdapter:
         return self.llm or get_llm()
@@ -308,6 +330,7 @@ class IMISpace:
 
         for node, score in all_results:
             node.touch()
+            self.mark_node_dirty(node)
 
             # Reconsolidation (v3): access may modify the memory
             if reconsolidate_on_access and zoom == Zoom.FULL and context:
@@ -316,6 +339,7 @@ class IMISpace:
                     node.reconsolidation_count += 1
                     node.last_reconsolidated = time.time()
                     self.reconsolidation_log.append(event)
+                    self.mark_node_dirty(node)
 
             # Zoom level content
             if zoom == Zoom.ORBITAL:
@@ -567,14 +591,19 @@ class IMISpace:
                 graph_data = {
                     "edges": self.graph.to_dict(),
                     "reconsolidation_log": [
-                        {"node_id": e.node_id, "field": e.field_changed,
-                         "old_value": e.old_value[:200] if e.old_value else "",
-                         "new_value": e.new_value[:200] if e.new_value else "",
-                         "timestamp": e.timestamp}
+                        {
+                            "node_id": e.node_id,
+                            "timestamp": e.timestamp,
+                            "context": e.context,
+                            "changes": e.changes,
+                            "previous_orbital": e.previous_orbital,
+                            "new_orbital": e.new_orbital,
+                        }
                         for e in self.reconsolidation_log[-100:]  # keep last 100
                     ] if self.reconsolidation_log else [],
                     "annealing": {
                         "iteration": self.annealing.iteration,
+                        "temperature": self.annealing.temperature,
                         "energy_history": list(self.annealing.energy_history[-50:]),
                         "converged": self.annealing.converged,
                     },
@@ -614,11 +643,18 @@ class IMISpace:
         if not self.backend:
             return
         for store_name, store in [("episodic", self.episodic), ("semantic", self.semantic)]:
-            for node in store.nodes:
-                # Heuristic: nodes accessed in this session (touch() updates last_accessed)
-                # Only re-persist if accessed recently (within 60s = likely this request)
-                if (time.time() - node.last_accessed) < 60:
-                    self.backend.put_node(store_name, node)
+            dirty_ids = self._dirty_node_ids.get(store_name, set())
+            if not dirty_ids:
+                continue
+            node_by_id = {node.id: node for node in store.nodes}
+            persisted: set[str] = set()
+            for node_id in list(dirty_ids):
+                node = node_by_id.get(node_id)
+                if node is None:
+                    continue
+                self.backend.put_node(store_name, node)
+                persisted.add(node_id)
+            dirty_ids.difference_update(persisted)
 
     @classmethod
     def from_backend(
@@ -653,8 +689,25 @@ class IMISpace:
                 # H12: new format has "edges" key; old format is a list directly
                 if isinstance(data, dict) and "edges" in data:
                     graph = MemoryGraph.from_dict(data["edges"])
-                    # Restore reconsolidation_log (best-effort)
-                    # Restore annealing state (best-effort)
+                    for entry in data.get("reconsolidation_log", []):
+                        try:
+                            reconsolidation_log.append(ReconsolidationEvent(
+                                node_id=entry["node_id"],
+                                timestamp=entry["timestamp"],
+                                context=entry.get("context", ""),
+                                changes=list(entry.get("changes", [])),
+                                previous_orbital=entry.get(
+                                    "previous_orbital",
+                                    entry.get("old_value", ""),
+                                ),
+                                new_orbital=entry.get(
+                                    "new_orbital",
+                                    entry.get("new_value", ""),
+                                ),
+                            ))
+                        except (KeyError, TypeError, ValueError):
+                            continue
+                    annealing_state = data.get("annealing")
                 elif isinstance(data, list):
                     graph = MemoryGraph.from_dict(data)
 
@@ -668,6 +721,12 @@ class IMISpace:
             graph=graph,
             backend=backend,
         )
+        space.reconsolidation_log = reconsolidation_log
+        if isinstance(annealing_state, dict):
+            space.annealing.iteration = int(annealing_state.get("iteration", 0))
+            space.annealing.temperature = float(annealing_state.get("temperature", 1.0))
+            space.annealing.energy_history = list(annealing_state.get("energy_history", []))
+            space.annealing.converged = bool(annealing_state.get("converged", False))
         return space
 
     @classmethod
@@ -819,6 +878,7 @@ class IMISpace:
             if node.id in changes:
                 node.tier = changes[node.id]
                 node.tier_updated_at = time.time()
+                self.mark_node_dirty(node)
 
         # Invalidate L1 cache
         self._l1_cache = None

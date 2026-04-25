@@ -12,7 +12,10 @@ import numpy as np
 import pytest
 
 from imi.events import ENCODE, CONSOLIDATE, MemoryEvent
+from imi.graph import EdgeType
 from imi.node import MemoryNode
+from imi.reconsolidate import ReconsolidationEvent
+from imi.space import IMISpace
 from imi.storage import JSONBackend, SQLiteBackend
 from imi.temporal import TemporalContext
 
@@ -40,6 +43,17 @@ def make_node(i: int = 0, **overrides) -> MemoryNode:
     )
     defaults.update(overrides)
     return MemoryNode(**defaults)
+
+
+class DummyEmbedder:
+    def embed(self, text: str):
+        emb = np.ones(384, dtype=np.float32)
+        return emb / np.linalg.norm(emb)
+
+
+class DummyLLM:
+    def generate(self, system: str, prompt: str, max_tokens: int = 1024, temperature=None):
+        return prompt[:max_tokens]
 
 
 # ---------------------------------------------------------------------------
@@ -377,3 +391,47 @@ class TestSQLiteBackend:
         conn = backend._get_conn()
         row = conn.execute("PRAGMA journal_mode").fetchone()
         assert row[0] == "wal"
+
+
+class TestIMISpacePersistence:
+    def test_dirty_tracking_persists_only_marked_nodes(self, tmp_path):
+        db_path = tmp_path / "space.db"
+        space = IMISpace.from_sqlite(db_path, embedder=DummyEmbedder(), llm=DummyLLM())
+        node = make_node(0, id="dirty_node")
+        space.episodic.add(node)
+
+        conn = space.backend._get_conn()
+        assert conn.execute("SELECT count(*) FROM memory_nodes").fetchone()[0] == 1
+
+        node.summary_medium = "updated via dirty tracking"
+        space.mark_dirty("episodic", node.id)
+        space.save()
+        assert conn.execute("SELECT count(*) FROM memory_nodes").fetchone()[0] == 2
+
+        space.save()
+        assert conn.execute("SELECT count(*) FROM memory_nodes").fetchone()[0] == 2
+
+    def test_graph_reconsolidation_and_annealing_roundtrip(self, tmp_path):
+        db_path = tmp_path / "space.db"
+        space = IMISpace.from_sqlite(db_path, embedder=DummyEmbedder(), llm=DummyLLM())
+        space.graph.add_edge("a", "b", EdgeType.CAUSAL, weight=0.7, label="test")
+        space.reconsolidation_log.append(ReconsolidationEvent(
+            node_id="a",
+            timestamp=123.0,
+            context="ctx",
+            changes=["changed"],
+            previous_orbital="old",
+            new_orbital="new",
+        ))
+        space.annealing.iteration = 3
+        space.annealing.energy_history = [1.0, 0.8, 0.7]
+        space.annealing.converged = True
+        space.save()
+
+        loaded = IMISpace.from_sqlite(db_path, embedder=DummyEmbedder(), llm=DummyLLM())
+        assert loaded.graph.stats()["total_edges"] == 2
+        assert len(loaded.reconsolidation_log) == 1
+        assert loaded.reconsolidation_log[0].changes == ["changed"]
+        assert loaded.annealing.iteration == 3
+        assert loaded.annealing.energy_history == [1.0, 0.8, 0.7]
+        assert loaded.annealing.converged is True
