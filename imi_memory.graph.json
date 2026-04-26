@@ -380,17 +380,17 @@
     },
     {
       "source_id": "5b71252d95ae",
-      "target_id": "cc01b347cffe",
-      "edge_type": "causal",
-      "weight": 0.7250937223434448,
-      "label": "auto-detected (cos=0.73)"
-    },
-    {
-      "source_id": "5b71252d95ae",
       "target_id": "b7496dc57c69",
       "edge_type": "causal",
       "weight": 0.7154262065887451,
       "label": "auto-detected (cos=0.72)"
+    },
+    {
+      "source_id": "5b71252d95ae",
+      "target_id": "cc01b347cffe",
+      "edge_type": "causal",
+      "weight": 0.7250937223434448,
+      "label": "auto-detected (cos=0.73)"
     },
     {
       "source_id": "5b71252d95ae",
@@ -419,6 +419,146 @@
       "edge_type": "causal",
       "weight": 0.742983877658844,
       "label": "auto-detected (cos=0.74)"
+    },
+    {
+      "source_id": "cc01b347cffe",
+      "target_id": "b7496dc57c69",
+      "edge_type": "causal",
+      "weight": 0.6790260672569275,
+      "label": "auto-detected (cos=0.68)"
+    },
+    {
+      "source_id": "cc01b347cffe",
+      "target_id": "5b71252d95ae",
+      "edge_type": "causal",
+      "weight": 0.7250937223434448,
+      "label": "auto-detected (cos=0.73)"
+    },
+    {
+      "source_id": "cc01b347cffe",
+      "target_id": "482e8cee7471",
+      "edge_type": "causal",
+      "weight": 0.7338797450065613,
+      "label": "auto-detected (cos=0.73)"
+    },
+    {
+      "source_id": "cc01b347cffe",
+      "target_id": "84b1ae5f7fb1",
+      "edge_type": "causal",
+      "weight": 0.7067456841468811,
+      "label": "auto-detected (cos=0.71)"
+    },
+    {
+      "source_id": "5ae073d2bcdd",
+      "target_id": "5b71252d95ae",
+      "edge_type": "causal",
+      "weight": 0.6545942425727844,
+      "label": "auto-detected (cos=0.65)"
+    },
+    {
+      "source_id": "5ae073d2bcdd",
+      "target_id": "8e0b9d0004b6",
+      "edge_type": "causal",
+      "weight": 0.6713980436325073,
+      "label": "auto-detected (cos=0.67)"
+    },
+    {
+      "source_id": "870bbc3ca1c8",
+      "target_id": "5b71252d95ae",
+      "edge_type": "causal",
+      "weight": 0.6545510292053223,
+      "label": "auto-detected (cos=0.65)"
+    },
+    {
+      "source_id": "482e8cee7471",
+      "target_id": "cc01b347cffe",
+      "edge_type": "causal",
+      "weight": 0.7338797450065613,
+      "label": "auto-detected (cos=0.73)"
+    },
+    {
+      "source_id": "84b1ae5f7fb1",
+      "target_id": "cc01b347cffe",
+      "edge_type": "causal",
+      "weight": 0.7067456841468811,
+      "label": "auto-detected (cos=0.71)"
+    },
+    {
+      "source_id": "84b1ae5f7fb1",
+      "target_id": "078b0f7c32b2",
+      "edge_type": "causal",
+      "weight": 0.7368912696838379,
+      "label": "auto-detected (cos=0.74)"
+    },
+    {
+      "source_id": "8e0b9d0004b6",
+      "target_id": "5ae073d2bcdd",
+      "edge_type": "causal",
+      "weight": 0.6713980436325073,
+      "label": "auto-detected (cos=0.67)"
+    },
+    {
+      "source_id": "078b0f7c32b2",
+      "target_id": "84b1ae5f7fb1",
+      "edge_type": "causal",
+      "weight": 0.7368912696838379,
+      "label": "auto-detected (cos=0.74)"
+    },
+    {
+      "source_id": "078b0f7c32b2",
+      "target_id": "fcadce0e9f84",
+      "edge_type": "causal",
+      "weight": 0.73271644115448,
+      "label": "auto-detected (cos=0.73)"
+    },
+    {
+      "source_id": "078b0f7c32b2",
+      "target_id": "068a08654062",
+      "edge_type": "causal",
+      "weight": 0.6545327305793762,
+      "label": "auto-detected (cos=0.65)"
+    },
+    {
+      "source_id": "fcadce0e9f84",
+      "target_id": "078b0f7c32b2",
+      "edge_type": "causal",
+      "weight": 0.73271644115448,
+      "label": "auto-detected (cos=0.73)"
+    },
+    {
+      "source_id": "fcadce0e9f84",
+      "target_id": "c6d2e35f185c",
+      "edge_type": "causal",
+      "weight": 0.6866059303283691,
+      "label": "auto-detected (cos=0.69)"
+    },
+    {
+      "source_id": "068a08654062",
+      "target_id": "078b0f7c32b2",
+      "edge_type": "causal",
+      "weight": 0.6545327305793762,
+      "label": "auto-detected (cos=0.65)"
+    },
+    {
+      "source_id": "068a08654062",
+      "target_id": "intent_33d30953",
+      "edge_type": "causal",
+      "weight": 1.0,
+      "label": "fulfills"
+    },
+    {
+      "source_id": "068a08654062",
+      "target_id": "intent_c6047dc2",
+      "edge_type": "causal",
+      "weight": 1.0,
+      "label": "fulfills"
+    },
+    {
+      "source_id": "068a08654062",
+      "target_id": "2becb07fbf0a",
+      "edge_type": "causal",
+      "weight": 1.0,
+      "label": "supersedes"
     },
     {
       "source_id": "801dd77f3226",
@@ -589,146 +729,6 @@
       "label": "auto-detected (cos=0.69)"
     },
     {
-      "source_id": "cc01b347cffe",
-      "target_id": "482e8cee7471",
-      "edge_type": "causal",
-      "weight": 0.7338797450065613,
-      "label": "auto-detected (cos=0.73)"
-    },
-    {
-      "source_id": "cc01b347cffe",
-      "target_id": "b7496dc57c69",
-      "edge_type": "causal",
-      "weight": 0.6790260672569275,
-      "label": "auto-detected (cos=0.68)"
-    },
-    {
-      "source_id": "cc01b347cffe",
-      "target_id": "5b71252d95ae",
-      "edge_type": "causal",
-      "weight": 0.7250937223434448,
-      "label": "auto-detected (cos=0.73)"
-    },
-    {
-      "source_id": "cc01b347cffe",
-      "target_id": "84b1ae5f7fb1",
-      "edge_type": "causal",
-      "weight": 0.7067456841468811,
-      "label": "auto-detected (cos=0.71)"
-    },
-    {
-      "source_id": "482e8cee7471",
-      "target_id": "cc01b347cffe",
-      "edge_type": "causal",
-      "weight": 0.7338797450065613,
-      "label": "auto-detected (cos=0.73)"
-    },
-    {
-      "source_id": "84b1ae5f7fb1",
-      "target_id": "cc01b347cffe",
-      "edge_type": "causal",
-      "weight": 0.7067456841468811,
-      "label": "auto-detected (cos=0.71)"
-    },
-    {
-      "source_id": "84b1ae5f7fb1",
-      "target_id": "078b0f7c32b2",
-      "edge_type": "causal",
-      "weight": 0.7368912696838379,
-      "label": "auto-detected (cos=0.74)"
-    },
-    {
-      "source_id": "5ae073d2bcdd",
-      "target_id": "5b71252d95ae",
-      "edge_type": "causal",
-      "weight": 0.6545942425727844,
-      "label": "auto-detected (cos=0.65)"
-    },
-    {
-      "source_id": "5ae073d2bcdd",
-      "target_id": "8e0b9d0004b6",
-      "edge_type": "causal",
-      "weight": 0.6713980436325073,
-      "label": "auto-detected (cos=0.67)"
-    },
-    {
-      "source_id": "870bbc3ca1c8",
-      "target_id": "5b71252d95ae",
-      "edge_type": "causal",
-      "weight": 0.6545510292053223,
-      "label": "auto-detected (cos=0.65)"
-    },
-    {
-      "source_id": "078b0f7c32b2",
-      "target_id": "84b1ae5f7fb1",
-      "edge_type": "causal",
-      "weight": 0.7368912696838379,
-      "label": "auto-detected (cos=0.74)"
-    },
-    {
-      "source_id": "078b0f7c32b2",
-      "target_id": "fcadce0e9f84",
-      "edge_type": "causal",
-      "weight": 0.73271644115448,
-      "label": "auto-detected (cos=0.73)"
-    },
-    {
-      "source_id": "078b0f7c32b2",
-      "target_id": "068a08654062",
-      "edge_type": "causal",
-      "weight": 0.6545327305793762,
-      "label": "auto-detected (cos=0.65)"
-    },
-    {
-      "source_id": "8e0b9d0004b6",
-      "target_id": "5ae073d2bcdd",
-      "edge_type": "causal",
-      "weight": 0.6713980436325073,
-      "label": "auto-detected (cos=0.67)"
-    },
-    {
-      "source_id": "fcadce0e9f84",
-      "target_id": "078b0f7c32b2",
-      "edge_type": "causal",
-      "weight": 0.73271644115448,
-      "label": "auto-detected (cos=0.73)"
-    },
-    {
-      "source_id": "fcadce0e9f84",
-      "target_id": "c6d2e35f185c",
-      "edge_type": "causal",
-      "weight": 0.6866059303283691,
-      "label": "auto-detected (cos=0.69)"
-    },
-    {
-      "source_id": "068a08654062",
-      "target_id": "078b0f7c32b2",
-      "edge_type": "causal",
-      "weight": 0.6545327305793762,
-      "label": "auto-detected (cos=0.65)"
-    },
-    {
-      "source_id": "068a08654062",
-      "target_id": "intent_33d30953",
-      "edge_type": "causal",
-      "weight": 1.0,
-      "label": "fulfills"
-    },
-    {
-      "source_id": "068a08654062",
-      "target_id": "intent_c6047dc2",
-      "edge_type": "causal",
-      "weight": 1.0,
-      "label": "fulfills"
-    },
-    {
-      "source_id": "068a08654062",
-      "target_id": "2becb07fbf0a",
-      "edge_type": "causal",
-      "weight": 1.0,
-      "label": "supersedes"
-    },
-    {
       "source_id": "c6d2e35f185c",
       "target_id": "fcadce0e9f84",
       "edge_type": "causal",
@@ -762,6 +762,27 @@
       "edge_type": "causal",
       "weight": 0.6914229393005371,
       "label": "auto-detected (cos=0.69)"
+    },
+    {
+      "source_id": "3a559fbe89f0",
+      "target_id": "2becb07fbf0a",
+      "edge_type": "causal",
+      "weight": 0.6914229393005371,
+      "label": "auto-detected (cos=0.69)"
+    },
+    {
+      "source_id": "3a559fbe89f0",
+      "target_id": "1577a64412d8",
+      "edge_type": "causal",
+      "weight": 0.6524472832679749,
+      "label": "auto-detected (cos=0.65)"
+    },
+    {
+      "source_id": "1577a64412d8",
+      "target_id": "3a559fbe89f0",
+      "edge_type": "causal",
+      "weight": 0.6524472832679749,
+      "label": "auto-detected (cos=0.65)"
     },
     {
       "source_id": "feef20afbbfa",
@@ -1275,6 +1296,13 @@
       "label": "auto-detected (cos=0.70)"
     },
     {
+      "source_id": "d4bdef9fe006",
+      "target_id": "818af064c7bc",
+      "edge_type": "causal",
+      "weight": 0.7234662771224976,
+      "label": "auto-detected (cos=0.72)"
+    },
+    {
       "source_id": "b5cc73ecb0ed",
       "target_id": "d4bdef9fe006",
       "edge_type": "causal",
@@ -1448,27 +1476,6 @@
       "edge_type": "causal",
       "weight": 0.8,
       "label": "auto-detected (cos=0.93)"
-    },
-    {
-      "source_id": "3a559fbe89f0",
-      "target_id": "2becb07fbf0a",
-      "edge_type": "causal",
-      "weight": 0.6914229393005371,
-      "label": "auto-detected (cos=0.69)"
-    },
-    {
-      "source_id": "3a559fbe89f0",
-      "target_id": "1577a64412d8",
-      "edge_type": "causal",
-      "weight": 0.6524472832679749,
-      "label": "auto-detected (cos=0.65)"
-    },
-    {
-      "source_id": "1577a64412d8",
-      "target_id": "3a559fbe89f0",
-      "edge_type": "causal",
-      "weight": 0.6524472832679749,
-      "label": "auto-detected (cos=0.65)"
     },
     {
       "source_id": "6f1033b10601",
@@ -3387,13 +3394,67 @@
       "edge_type": "causal",
       "weight": 0.6609610319137573,
       "label": "auto-detected (cos=0.66)"
+    },
+    {
+      "source_id": "818af064c7bc",
+      "target_id": "d4bdef9fe006",
+      "edge_type": "causal",
+      "weight": 0.7234662771224976,
+      "label": "auto-detected (cos=0.72)"
+    },
+    {
+      "source_id": "818af064c7bc",
+      "target_id": "e7ead613130b",
+      "edge_type": "causal",
+      "weight": 0.6521611213684082,
+      "label": "auto-detected (cos=0.65)"
+    },
+    {
+      "source_id": "7cfc9366f759",
+      "target_id": "intent_3b938e39",
+      "edge_type": "causal",
+      "weight": 1.0,
+      "label": "fulfills"
+    },
+    {
+      "source_id": "intent_3b938e39",
+      "target_id": "7cfc9366f759",
+      "edge_type": "causal",
+      "weight": 1.0,
+      "label": "fulfills"
+    },
+    {
+      "source_id": "dcaa4dc7455b",
+      "target_id": "26573e05c1b2",
+      "edge_type": "co_occurrence",
+      "weight": 1.0,
+      "label": "same_session:25abr-benchmark-v2"
+    },
+    {
+      "source_id": "26573e05c1b2",
+      "target_id": "dcaa4dc7455b",
+      "edge_type": "co_occurrence",
+      "weight": 1.0,
+      "label": "same_session:25abr-benchmark-v2"
+    },
+    {
+      "source_id": "e7ead613130b",
+      "target_id": "818af064c7bc",
+      "edge_type": "causal",
+      "weight": 0.6521611213684082,
+      "label": "auto-detected (cos=0.65)"
     }
   ],
   "reconsolidation_log": [],
   "annealing": {
-    "iteration": 1,
+    "iteration": 5,
+    "temperature": 0.8145062499999999,
     "energy_history": [
-      94685.25492285486
+      94631.14911486887,
+      95384.73706113888,
+      96749.51217179329,
+      93460.72885436741,
+      95468.97696113052
     ],
     "converged": false
   }
