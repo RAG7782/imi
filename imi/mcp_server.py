@@ -79,10 +79,52 @@ def _get_space():
 
 # --- Tools (CoD Pass 2 descriptions) ---
 
+def _check_intent_resolved_in_memory(space, intent_id: str, intent_content: str, intent_tags: list) -> dict | None:
+    """Camada A — verifica se uma intenção pendente já foi realizada em memória episódica recente.
+
+    Busca episódios recentes (últimas 200 memórias não-intention) com overlap semântico
+    à intenção. Se encontrar memória com salience >= 0.6 e overlap >= 2, retorna
+    {'resolved': True, 'evidence': <node_id>, 'summary': <texto>}.
+    Retorna None se não encontrar evidência de conclusão.
+    """
+    intent_words = set(w.lower() for w in intent_content.split() if len(w) > 4)
+    intent_tag_set = set(t.lower() for t in (intent_tags or []))
+    # Palavras que indicam conclusão
+    completion_signals = {"concluído", "concluida", "feito", "feita", "done", "completo", "finalizado",
+                          "publicado", "enviado", "implementado", "executado", "resolvido", "entregue"}
+
+    candidates = [n for n in reversed(space.episodic.nodes)
+                  if not n.summary_orbital.startswith("[INTENT:") and
+                     not n.summary_orbital.startswith("[DONE:")][:200]
+
+    for node in candidates:
+        text = (node.original or node.summary_medium or "").lower()
+        node_tags = set(t.lower() for t in (node.tags or []))
+
+        word_overlap = len(intent_words & set(text.split()))
+        tag_overlap = len(intent_tag_set & node_tags)
+        has_signal = bool(completion_signals & set(text.split()))
+
+        score = word_overlap + tag_overlap * 2 + (2 if has_signal else 0)
+        salience = node.affect.salience if node.affect else 0.5
+
+        if score >= 2 and salience >= 0.6:
+            return {
+                "resolved": True,
+                "evidence_id": node.id,
+                "summary": (node.summary_medium or node.original or "")[:120],
+                "score": score,
+            }
+    return None
+
+
 def _find_related_intentions(space, tag_list: list[str], experience: str) -> list[dict]:
-    """IMI-E04 S06: Find pending intentions with tag or keyword overlap.
+    """IMI-E04 S06 + Camada A: Find pending intentions with tag or keyword overlap.
 
     Matches by: (1) direct tag intersection, (2) keyword presence in intention content.
+    Camada A: antes de retornar como pendente, verifica se já existe evidência de
+    conclusão em memória episódica recente. Se sim, marca como possibly_resolved=True
+    para que o agente confirme com o usuário em vez de exibir como ativa.
     Returns intentions sorted by overlap_score DESC, max 3.
     """
     exp_words = set(w.lower() for w in experience.split() if len(w) > 4)
@@ -108,14 +150,23 @@ def _find_related_intentions(space, tag_list: list[str], experience: str) -> lis
         overlap_score = tag_overlap * 2 + word_overlap  # tags contam mais
 
         if overlap_score >= 1:
-            matches.append({
+            entry = {
                 "id": node.id,
                 "content": data.get("content", "")[:120],
                 "project": data.get("project", ""),
                 "deadline": data.get("deadline", ""),
                 "overlap_score": overlap_score,
                 "tag_matches": list(tag_set & intent_tags),
-            })
+            }
+            # Camada A — verificação de conclusão latente
+            evidence = _check_intent_resolved_in_memory(
+                space, node.id, data.get("content", ""), data.get("tags", [])
+            )
+            if evidence:
+                entry["possibly_resolved"] = True
+                entry["resolution_evidence"] = evidence["summary"]
+                entry["resolution_evidence_id"] = evidence["evidence_id"]
+            matches.append(entry)
 
     matches.sort(key=lambda x: x["overlap_score"], reverse=True)
     return matches[:3]
@@ -128,8 +179,9 @@ def im_enc(
     source: str = "",
     context_hint: str = "",
     occurred_at: str = "",
+    resolves_intent: str = "",
 ) -> str:
-    """Store new memory from experience"""
+    """Store new memory from experience. resolves_intent: intent_id to auto-fulfill when this memory is stored."""
     import time as _time
     from datetime import datetime, timezone
 
@@ -178,6 +230,29 @@ def im_enc(
     if related_intentions:
         result["pending_intentions_hint"] = related_intentions
         _log(f"im_enc S06: {len(related_intentions)} related intention(s) detected for node {node.id[:8]}")
+
+    # Camada B — resolves_intent: auto-fulfill linked intention
+    if resolves_intent:
+        try:
+            intent_node = space.episodic.get(resolves_intent)
+            if intent_node is None:
+                intent_node = space.backend.get_node("episodic", resolves_intent)
+            if intent_node is not None:
+                try:
+                    idata = json.loads(intent_node.seed)
+                except Exception:
+                    idata = {}
+                if idata.get("node_type") == "intention" and idata.get("status") == "pending":
+                    idata["status"] = "fulfilled"
+                    idata["fulfilled_by"] = node.id
+                    idata["fulfilled_at"] = _time_module.time()
+                    intent_node.seed = json.dumps(idata, ensure_ascii=False)
+                    intent_node.summary_orbital = intent_node.summary_orbital.replace("[INTENT:", "[DONE:")
+                    space.backend.put_node("episodic", intent_node)
+                    result["intent_resolved"] = resolves_intent
+                    _log(f"im_enc Camada-B: intent {resolves_intent} auto-fulfilled by {node.id[:8]}")
+        except Exception as _e:
+            _log(f"im_enc Camada-B WARN: {_e}")
 
     # FCM federation — emite evento após encode (SecureFCMBridge: dedup + TriggerDetector)
     try:
