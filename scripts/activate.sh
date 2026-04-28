@@ -9,13 +9,16 @@
 #   1. Registers IMI MCP server globally (if not already)
 #   2. Installs /agora-imi skill into AGORA-OS (if present)
 #   3. Installs IMI memory hook into AGORA-OS (if present)
-#   4. Sets up IMI_DB environment variable
+#   4. Sets up IMI_DB and local embedding environment variables
 #   5. Verifies everything works
 
 IMI_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AGORA_ROOT="$HOME/experimentos/agora-os-plugin"
 IMI_PYTHON="$IMI_ROOT/.venv/bin/python"
 IMI_DB="${IMI_DB:-$HOME/.claude/plugins/data/imi/agora-memory.db}"
+IMI_EMBEDDER_PROVIDER="${IMI_EMBEDDER_PROVIDER:-ollama}"
+IMI_EMBEDDER_MODEL="${IMI_EMBEDDER_MODEL:-all-minilm}"
+OLLAMA_BASE_URL="${OLLAMA_BASE_URL:-http://localhost:11434}"
 CLAUDE_JSON="$HOME/.claude.json"
 
 GREEN='\033[0;32m'
@@ -69,6 +72,8 @@ if [[ "$1" == "--check" ]]; then
         fail "IMI Python package not importable"
     fi
 
+    ok "Embedding provider: $IMI_EMBEDDER_PROVIDER/$IMI_EMBEDDER_MODEL via $OLLAMA_BASE_URL"
+
     # DB
     if [[ -f "$IMI_DB" ]]; then
         COUNT=$("$IMI_PYTHON" -c "
@@ -108,7 +113,13 @@ fi
 echo "Step 3: Environment"
 export IMI_DB="$IMI_DB"
 export IMI_PYTHON="$IMI_PYTHON"
+export IMI_EMBEDDER_PROVIDER="$IMI_EMBEDDER_PROVIDER"
+export IMI_EMBEDDER_MODEL="$IMI_EMBEDDER_MODEL"
+export OLLAMA_BASE_URL="$OLLAMA_BASE_URL"
 ok "IMI_DB=$IMI_DB"
+ok "IMI_EMBEDDER_PROVIDER=$IMI_EMBEDDER_PROVIDER"
+ok "IMI_EMBEDDER_MODEL=$IMI_EMBEDDER_MODEL"
+ok "OLLAMA_BASE_URL=$OLLAMA_BASE_URL"
 
 # ── Step 4: AGORA-OS integration (if present) ──
 echo "Step 4: AGORA-OS integration"

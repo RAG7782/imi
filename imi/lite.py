@@ -22,7 +22,7 @@ from typing import Any
 import chromadb
 import numpy as np
 
-from imi.embedder import Embedder, SentenceTransformerEmbedder
+from imi.embedder import Embedder, create_embedder_from_env
 
 
 @dataclass
@@ -35,7 +35,7 @@ class ZoomRAG:
     - Standard vector retrieval under the hood
     """
 
-    embedder: Embedder = field(default_factory=SentenceTransformerEmbedder)
+    embedder: Embedder = field(default_factory=create_embedder_from_env)
     collection_prefix: str = ""
     _client: Any = field(default=None, repr=False)
     _collection: Any = field(default=None, repr=False)

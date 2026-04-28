@@ -24,7 +24,7 @@ from imi.anchors import Anchor, ConfidenceReport, extract_anchors, compute_confi
 from imi.causal import auto_link_causal
 from imi.core import compress_seed, remember, summarize, get_llm
 from imi.positional import positional_reorder
-from imi.embedder import Embedder, SentenceTransformerEmbedder
+from imi.embedder import Embedder, create_embedder_from_env
 from imi.events import NAVIGATE_ACCESS, MemoryEvent
 from imi.graph import MemoryGraph
 from imi.llm import LLMAdapter
@@ -93,7 +93,7 @@ class IMISpace:
     semantic: VectorStore = field(default_factory=VectorStore)
 
     # Adapters
-    embedder: Embedder = field(default_factory=SentenceTransformerEmbedder)
+    embedder: Embedder = field(default_factory=create_embedder_from_env)
     llm: LLMAdapter | None = None
 
     # Spatial + TDA
@@ -714,7 +714,7 @@ class IMISpace:
         space = cls(
             episodic=episodic,
             semantic=semantic,
-            embedder=embedder or SentenceTransformerEmbedder(),
+            embedder=embedder or create_embedder_from_env(),
             llm=llm,
             _anchors=anchors,
             temporal_index=temporal_index,
@@ -776,7 +776,7 @@ class IMISpace:
         return cls(
             episodic=episodic,
             semantic=semantic,
-            embedder=embedder or SentenceTransformerEmbedder(),
+            embedder=embedder or create_embedder_from_env(),
             llm=llm,
             _anchors=anchors,
             temporal_index=temporal_index,

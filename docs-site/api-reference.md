@@ -15,7 +15,7 @@ space = IMISpace.from_sqlite("agent.db")
 ```
 
 - `db_path` — path to the `.db` file; created if it does not exist
-- `embedder` — custom `Embedder` instance; defaults to `SentenceTransformerEmbedder`
+- `embedder` — custom `Embedder` instance; default is selected from env. Use `IMI_EMBEDDER_PROVIDER=ollama` with `IMI_EMBEDDER_MODEL=all-minilm` and `OLLAMA_BASE_URL=http://localhost:11434` for local Ollama embeddings.
 - `llm` — custom `LLMAdapter`; defaults to Anthropic Claude via `ANTHROPIC_API_KEY`
 - `enable_fts` — enable SQLite FTS5 full-text search index (default `True`)
 

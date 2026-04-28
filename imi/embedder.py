@@ -7,14 +7,39 @@ Backends:
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+import urllib.request
 from dataclasses import dataclass, field
 from typing import Protocol
 
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+
+def create_embedder_from_env() -> "Embedder":
+    """Create the default embedder from environment configuration.
+
+    Defaults remain local sentence-transformers for backwards compatibility.
+    Set ``IMI_EMBEDDER_PROVIDER=ollama`` to use Ollama's local embedding API.
+    """
+    provider = os.getenv("IMI_EMBEDDER_PROVIDER", "sentence-transformers").strip().lower()
+    if provider in {"ollama", "ollama-local"}:
+        return OllamaEmbedder(
+            model_name=os.getenv("IMI_EMBEDDER_MODEL", "all-minilm"),
+            base_url=os.getenv("IMI_OLLAMA_BASE_URL", os.getenv("OLLAMA_BASE_URL", "")),
+            max_chars=int(os.getenv("IMI_EMBEDDER_MAX_CHARS", "400")),
+        )
+    if provider in {"sentence-transformers", "sentence_transformers", "local", "st"}:
+        return SentenceTransformerEmbedder(
+            model_name=os.getenv("IMI_EMBEDDER_MODEL", "all-MiniLM-L6-v2")
+        )
+    raise ValueError(
+        "Unsupported IMI_EMBEDDER_PROVIDER="
+        f"{provider!r}; expected 'sentence-transformers' or 'ollama'"
+    )
 
 
 class Embedder(Protocol):
@@ -76,19 +101,16 @@ class OllamaEmbedder:
     model_name: str = "all-minilm"
     base_url: str = ""
     _dims: int = field(default=0, repr=False)
-    _max_chars: int = field(default=400, repr=False)
+    max_chars: int = 400
 
     def __post_init__(self):
         if not self.base_url:
             self.base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-            # Strip /v1 suffix if present (Ollama native API doesn't use it)
-            self.base_url = self.base_url.rstrip("/").removesuffix("/v1")
+        # Strip /v1 suffix if present (Ollama native API doesn't use it).
+        self.base_url = self.base_url.rstrip("/").removesuffix("/v1")
 
     def _request_embed(self, input_data: str | list[str]) -> list[list[float]]:
         """Call Ollama /api/embed endpoint."""
-        import urllib.request
-        import json
-
         payload = json.dumps({
             "model": self.model_name,
             "input": input_data,
@@ -114,11 +136,11 @@ class OllamaEmbedder:
 
     def _truncate(self, text: str) -> str:
         """Truncate to max_chars to avoid Ollama errors on long input."""
-        if len(text) > self._max_chars:
+        if len(text) > self.max_chars:
             logger.debug(
-                "OllamaEmbedder: truncating %d chars to %d", len(text), self._max_chars
+                "OllamaEmbedder: truncating %d chars to %d", len(text), self.max_chars
             )
-            return text[: self._max_chars]
+            return text[: self.max_chars]
         return text
 
     @property

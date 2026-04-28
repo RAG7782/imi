@@ -62,6 +62,14 @@ space.encode("DNS failure at 03:00 caused auth cascade across 3 services")
 result = space.navigate("what caused the auth outage?")
 ```
 
+Local Ollama embeddings:
+
+```bash
+export IMI_EMBEDDER_PROVIDER=ollama
+export IMI_EMBEDDER_MODEL=all-minilm
+export OLLAMA_BASE_URL=http://localhost:11434
+```
+
 ## What IMI returns that RAG doesn't
 
 ```python
