@@ -39,6 +39,16 @@ FCM_DIR = Path.home() / ".fcm"
 FCM_EVENTS_DIR = FCM_DIR / "events"
 FCM_PROCESSED_DIR = FCM_DIR / "processed"
 
+# Content size limit for FCM events (configurable via env var)
+_FCM_CONTENT_MAX_CHARS: int = int(os.environ.get("FCM_CONTENT_MAX_CHARS", "2000"))
+
+
+def _minify(text: str, max_chars: int = _FCM_CONTENT_MAX_CHARS) -> str:
+    """Truncate text to max_chars, appending a marker when cut."""
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars] + "…[truncated]"
+
 # Trust gradient: IMI source → salience floor
 # Memories from less-trusted sources get lower salience floors,
 # making them more likely to be filtered by the membrane.
@@ -166,13 +176,14 @@ class FCMBridge:
             "source": self.source,
             "type": "memory_created",
             "title": title,
-            "content": content,
+            "content": _minify(content),
             "tags": tags,
             "salience": salience,
             "metadata": {
                 "imi_node_id": node_id,
                 "imi_seed": imi_seed,
                 "trust_level": self.trust_level,
+                "content_original_len": len(content),
             },
         }
 
@@ -194,10 +205,10 @@ class FCMBridge:
             "source": self.source,
             "type": event_type,
             "title": f"{event_type}: {summary[:60]}",
-            "content": summary,
+            "content": _minify(summary),
             "tags": tags or ["session"],
             "salience": salience,
-            "metadata": metadata or {},
+            "metadata": {**(metadata or {}), "content_original_len": len(summary)},
         }
         return self._write_event(event)
 

@@ -172,6 +172,16 @@ def _find_related_intentions(space, tag_list: list[str], experience: str) -> lis
     return matches[:3]
 
 
+_IMI_EXP_MAX_CHARS: int = int(os.environ.get("IMI_EXP_MAX_CHARS", "4000"))
+
+
+def _minify_experience(text: str, max_chars: int = _IMI_EXP_MAX_CHARS) -> str:
+    """Truncate experience to max_chars before encoding. Inline — no external dep."""
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars] + "…[truncated]"
+
+
 @mcp.tool()
 def im_enc(
     experience: str,
@@ -184,6 +194,8 @@ def im_enc(
     """Store new memory from experience. resolves_intent: intent_id to auto-fulfill when this memory is stored."""
     import time as _time
     from datetime import datetime, timezone
+
+    experience = _minify_experience(experience)
 
     space = _get_space()
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else None
