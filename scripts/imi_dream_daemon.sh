@@ -125,10 +125,18 @@ converged=false
 for round in $(seq 1 $MAX_ROUNDS); do
     log "Round $round/$MAX_ROUNDS iniciando..."
 
-    # Executa dream com timeout
+    # Executa dream com timeout nativo bash (compatível macOS — sem dependência de coreutils)
     set +e
-    output=$(timeout "$CONVERGE_TIMEOUT" $PYTHON -c "$DREAM_SCRIPT" 2>&1)
+    $PYTHON -c "$DREAM_SCRIPT" > /tmp/imi_dream_out_$$.txt 2>&1 &
+    dream_pid=$!
+    ( sleep "$CONVERGE_TIMEOUT" && kill "$dream_pid" 2>/dev/null ) &
+    watchdog_pid=$!
+    wait "$dream_pid"
     exit_code=$?
+    kill "$watchdog_pid" 2>/dev/null
+    wait "$watchdog_pid" 2>/dev/null
+    output=$(cat /tmp/imi_dream_out_$$.txt)
+    rm -f /tmp/imi_dream_out_$$.txt
     set -e
 
     log "Round $round output: $output"
@@ -165,7 +173,7 @@ done
 
 BOOT_CACHE="$HOME/.imi_boot_cache"
 if [[ -f "$BOOT_CACHE" ]]; then
-    touch -t "$(date -d '5 hours ago' +%Y%m%d%H%M 2>/dev/null || date -v-5H +%Y%m%d%H%M)" "$BOOT_CACHE" 2>/dev/null || rm -f "$BOOT_CACHE"
+    touch -t "$(date -v-5H +%Y%m%d%H%M 2>/dev/null || date -d '5 hours ago' +%Y%m%d%H%M 2>/dev/null)" "$BOOT_CACHE" 2>/dev/null || rm -f "$BOOT_CACHE"
     log "Boot cache invalidado (próximo boot vai reconstruir com novos padrões)"
 fi
 
