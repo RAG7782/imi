@@ -34,6 +34,17 @@ log_json() {
     echo "$1" >> "$event_file" 2>/dev/null || true
 }
 
+# ── Backend LLM — força Ollama (phi4-mini local) como padrão do daemon ────────
+# Garante que créditos Anthropic zerados não bloqueiam a consolidação.
+# O cron pode herdar ANTHROPIC_API_KEY mas o daemon prefere Ollama (free, local).
+# Override explícito: IMI_LLM_BACKEND=claude-code bash imi_dream_daemon.sh
+if [[ -z "${IMI_LLM_BACKEND:-}" ]] || [[ "${IMI_LLM_BACKEND}" == "api" ]]; then
+    if [[ "${IMI_LLM_BACKEND:-}" == "api" ]]; then
+        log "WARN: backend=api substituído por ollama (evitar créditos zerados)"
+    fi
+    export IMI_LLM_BACKEND=ollama
+fi
+
 # ── Lock guard (evita múltiplas instâncias simultâneas) ───────────────────────
 
 if [[ "${1:-}" != "--force" ]]; then
