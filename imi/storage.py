@@ -504,7 +504,7 @@ class SQLiteBackend(StorageBackend):
         version = self._next_version(conn, node.id, store_name)
         now = time.time()
         conn.execute(
-            "INSERT INTO memory_nodes "
+            "INSERT OR IGNORE INTO memory_nodes "
             "(node_id, store_name, version, data, embedding, created_at, inserted_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
@@ -531,7 +531,7 @@ class SQLiteBackend(StorageBackend):
             embedding = d.pop("embedding", None)
             version = self._next_version(conn, node.id, store_name)
             conn.execute(
-                "INSERT INTO memory_nodes "
+                "INSERT OR IGNORE INTO memory_nodes "
                 "(node_id, store_name, version, data, embedding, created_at, inserted_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
