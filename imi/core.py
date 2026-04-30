@@ -9,7 +9,7 @@ Everything else in IMI is elaboration on this single idea.
 
 from __future__ import annotations
 
-from imi.llm import LLMAdapter, ClaudeLLM
+from imi.llm import LLMAdapter, ClaudeLLM, ClaudeCodeLLM, OllamaLLM, create_llm_from_env
 
 # ---------------------------------------------------------------------------
 # Default LLM (lazy singleton)
@@ -20,7 +20,7 @@ _default_llm: LLMAdapter | None = None
 def get_llm() -> LLMAdapter:
     global _default_llm
     if _default_llm is None:
-        _default_llm = ClaudeLLM()
+        _default_llm = create_llm_from_env()
     return _default_llm
 
 
