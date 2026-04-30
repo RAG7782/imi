@@ -1247,6 +1247,13 @@
       "label": "auto-detected (cos=0.66)"
     },
     {
+      "source_id": "3994acf6522d",
+      "target_id": "06b5f3371133",
+      "edge_type": "causal",
+      "weight": 0.6633212566375732,
+      "label": "auto-detected (cos=0.66)"
+    },
+    {
       "source_id": "f531e528466d",
       "target_id": "daae854387a6",
       "edge_type": "causal",
@@ -4087,12 +4094,33 @@
       "edge_type": "causal",
       "weight": 0.702194333076477,
       "label": "auto-detected (cos=0.70)"
+    },
+    {
+      "source_id": "06b5f3371133",
+      "target_id": "70100ba45643",
+      "edge_type": "causal",
+      "weight": 0.6825910210609436,
+      "label": "auto-detected (cos=0.68)"
+    },
+    {
+      "source_id": "06b5f3371133",
+      "target_id": "3994acf6522d",
+      "edge_type": "causal",
+      "weight": 0.6633212566375732,
+      "label": "auto-detected (cos=0.66)"
+    },
+    {
+      "source_id": "70100ba45643",
+      "target_id": "06b5f3371133",
+      "edge_type": "causal",
+      "weight": 0.6825910210609436,
+      "label": "auto-detected (cos=0.68)"
     }
   ],
   "reconsolidation_log": [],
   "annealing": {
-    "iteration": 23,
-    "temperature": 0.3235335449737089,
+    "iteration": 26,
+    "temperature": 0.27738957312183365,
     "energy_history": [
       94631.14911486887,
       95384.73706113888,
@@ -4116,7 +4144,10 @@
       99108.09842888798,
       97395.1228366975,
       100473.52355416925,
-      102193.97569633168
+      102193.97569633168,
+      114138.62220481285,
+      97471.03771577883,
+      92826.72228553495
     ],
     "converged": false
   }
