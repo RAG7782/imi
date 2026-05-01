@@ -120,7 +120,12 @@ def find_clusters(
     store: VectorStore,
     similarity_threshold: float = 0.45,
 ) -> list[list[MemoryNode]]:
-    """Find groups of highly similar memories (candidates for consolidation)."""
+    """Find groups of highly similar memories (candidates for consolidation).
+
+    Clusters are returned sorted by consolidation priority — surprise-bearing
+    memories appear first so the maintenance budget processes them before
+    routine episodic content (CLS + predictive coding alignment).
+    """
     nodes = [n for n in store.nodes if n.embedding is not None]
     if len(nodes) < 2:
         return []
@@ -145,6 +150,14 @@ def find_clusters(
                 visited.add(j)
         if len(cluster) >= 2:
             clusters.append([nodes[idx] for idx in cluster])
+
+    # Sort clusters by max consolidation_priority of any node in the cluster.
+    # High-surprise clusters consolidate first — this is the correct role
+    # of surprise in CLS/predictive coding (not retrieval boost).
+    clusters.sort(
+        key=lambda c: max(n.consolidation_priority for n in c),
+        reverse=True,
+    )
 
     return clusters
 

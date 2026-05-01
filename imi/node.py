@@ -99,20 +99,36 @@ class MemoryNode:
             self.affect.update_dynamic(self.access_count)
 
     @property
+    def consolidation_priority(self) -> float:
+        """Priority for memory consolidation during maintenance cycles.
+
+        High-surprise memories should be consolidated first — they carry the most
+        new information (Rao & Ballard 1999 predictive coding; Friston Free Energy).
+        Combines surprise magnitude with affect salience and recency.
+        """
+        salience = self.affect.salience if self.affect else 0.5
+        # Surprise drives consolidation: 0→base priority, 1.0→3x priority
+        surprise_weight = 1.0 + 2.0 * self.surprise_magnitude
+        # Recency: fresher memories are still being encoded, need faster consolidation
+        days_since = (time.time() - self.effective_time) / 86400
+        recency_factor = 1.0 / (1.0 + days_since * 0.1)
+        return salience * surprise_weight * recency_factor
+
+    @property
     def relevance(self) -> float:
-        """Relevance score combining recency, frequency, affect, and surprise.
+        """Relevance score combining recency, frequency, and affect.
 
         v3: affect modulates relevance — high-affect memories stay relevant longer.
-        v3.1: surprise_magnitude boosts novel memories (predictive coding integration).
+        Note: surprise is NOT a retrieval boost — it drives consolidation_priority.
+        High-surprise memories get consolidated faster, which indirectly improves
+        long-term semantic pattern quality (the correct cognitive role).
         """
         days_since = (time.time() - self.last_accessed) / 86400
         fade_resist = self.affect.fade_resistance if self.affect else 0.3
         effective_decay = days_since * (1.0 - 0.5 * fade_resist)
         recency = 1.0 / (1.0 + effective_decay)
         frequency = log(1.0 + self.access_count)
-        # Surprise boost: novel memories are more relevant (0→1.0x, 1.0→1.3x)
-        surprise_boost = 1.0 + 0.3 * self.surprise_magnitude
-        return recency * (1.0 + frequency) * self.mass * surprise_boost
+        return recency * (1.0 + frequency) * self.mass
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize for persistence."""
