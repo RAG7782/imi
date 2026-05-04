@@ -491,6 +491,13 @@
       "label": "auto-detected (cos=0.73)"
     },
     {
+      "source_id": "482e8cee7471",
+      "target_id": "b259241305af",
+      "edge_type": "causal",
+      "weight": 0.6635638475418091,
+      "label": "auto-detected (cos=0.66)"
+    },
+    {
       "source_id": "84b1ae5f7fb1",
       "target_id": "cc01b347cffe",
       "edge_type": "causal",
@@ -4227,20 +4234,62 @@
       "edge_type": "causal",
       "weight": 0.8,
       "label": "auto-detected (cos=0.81)"
+    },
+    {
+      "source_id": "ef02fc182c32",
+      "target_id": "faf0a6151d37",
+      "edge_type": "causal",
+      "weight": 0.6763589382171631,
+      "label": "auto-detected (cos=0.68)"
+    },
+    {
+      "source_id": "faf0a6151d37",
+      "target_id": "ef02fc182c32",
+      "edge_type": "causal",
+      "weight": 0.6763589382171631,
+      "label": "auto-detected (cos=0.68)"
+    },
+    {
+      "source_id": "b259241305af",
+      "target_id": "8e10fb604a80",
+      "edge_type": "causal",
+      "weight": 0.7982688546180725,
+      "label": "auto-detected (cos=0.80)"
+    },
+    {
+      "source_id": "b259241305af",
+      "target_id": "482e8cee7471",
+      "edge_type": "causal",
+      "weight": 0.6635638475418091,
+      "label": "auto-detected (cos=0.66)"
+    },
+    {
+      "source_id": "8e10fb604a80",
+      "target_id": "b259241305af",
+      "edge_type": "causal",
+      "weight": 0.7982688546180725,
+      "label": "auto-detected (cos=0.80)"
+    },
+    {
+      "source_id": "72f286cbac0e",
+      "target_id": "6fff4a24afc0",
+      "edge_type": "causal",
+      "weight": 0.7120682597160339,
+      "label": "auto-detected (cos=0.71)"
+    },
+    {
+      "source_id": "6fff4a24afc0",
+      "target_id": "72f286cbac0e",
+      "edge_type": "causal",
+      "weight": 0.7120682597160339,
+      "label": "auto-detected (cos=0.71)"
     }
   ],
   "reconsolidation_log": [],
   "annealing": {
-    "iteration": 60,
-    "temperature": 0.04849452524942309,
+    "iteration": 67,
+    "temperature": 0.0338655356380322,
     "energy_history": [
-      99598.97734488067,
-      98658.19441327837,
-      96896.65064871733,
-      98310.83155032634,
-      97740.80446536664,
-      98727.42127106345,
-      98618.06462196313,
       98330.13488935269,
       99452.32679058166,
       99108.09842888798,
@@ -4283,7 +4332,14 @@
       81434.94802108029,
       81056.23823868009,
       80570.2552806895,
-      80486.40064890323
+      80486.40064890323,
+      81875.23080617815,
+      83837.51929536302,
+      83900.46388707779,
+      83341.98683752389,
+      81418.72307862318,
+      82600.26525115717,
+      81995.15464549146
     ],
     "converged": false
   }
