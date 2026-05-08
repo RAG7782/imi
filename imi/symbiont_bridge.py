@@ -5,20 +5,63 @@
 2. Mound artifacts (APPROVED) -> L2 cache
 3. Murmuration PRIORITY_SHIFT -> L1 refresh with domain filter
 4. Federation relay -> FCM transport (handled by ClawVault, not here)
+
+Graceful degradation: all public functions are wrapped by imi_safe() —
+timeout 2s, silent fallback on any error. Same pattern as Immune Bridge.
+IMI failure never blocks SYMBIONT execution.
 """
 from __future__ import annotations
 
 import json
 import logging
+import functools
+import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar, Callable
 
 logger = logging.getLogger(__name__)
+
+_IMI_TIMEOUT_S: float = 2.0  # matches Immune Bridge pattern
+
+F = TypeVar("F", bound=Callable)
+
+
+def imi_safe(fallback: Any = None, timeout: float = _IMI_TIMEOUT_S):
+    """Decorator: run function in thread with timeout; return fallback on any error.
+
+    Guarantees IMI bridge never blocks SYMBIONT execution — identical contract
+    to immune_bridge.bridge_health() graceful degradation.
+    """
+    def decorator(fn: F) -> F:
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            result_box: list[Any] = [fallback]
+            exc_box: list[BaseException | None] = [None]
+
+            def _run():
+                try:
+                    result_box[0] = fn(*args, **kwargs)
+                except Exception as exc:  # noqa: BLE001
+                    exc_box[0] = exc
+
+            t = threading.Thread(target=_run, daemon=True)
+            t.start()
+            t.join(timeout)
+            if t.is_alive():
+                logger.warning("imi_safe: %s timed out after %.1fs — returning fallback", fn.__name__, timeout)
+                return fallback
+            if exc_box[0] is not None:
+                logger.warning("imi_safe: %s raised %s — returning fallback", fn.__name__, exc_box[0])
+                return fallback
+            return result_box[0]
+        return wrapper  # type: ignore[return-value]
+    return decorator
 
 # FCM event directory
 FCM_EVENTS_DIR = Path.home() / ".fcm" / "events"
 
 
+@imi_safe(fallback={})
 def read_channel_weights(symbiont_url: str | None = None) -> dict[str, float]:
     """Read SYMBIONT Mycelium channel weights.
 
@@ -43,6 +86,7 @@ def read_channel_weights(symbiont_url: str | None = None) -> dict[str, float]:
     return {}
 
 
+@imi_safe(fallback=None)
 def check_priority_shift() -> str | None:
     """Check FCM bus for recent PRIORITY_SHIFT signal.
 
@@ -64,6 +108,7 @@ def check_priority_shift() -> str | None:
     return None
 
 
+@imi_safe(fallback=[])
 def get_mound_approved_artifacts() -> list[dict[str, Any]]:
     """Get APPROVED Mound artifacts from FCM bus.
 
