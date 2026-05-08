@@ -1,6 +1,10 @@
 """Tests for the LangChain integration."""
 
+import os
 import pytest
+
+# Force OllamaLLM backend so tests don't require the 'anthropic' package
+os.environ.setdefault("IMI_LLM_BACKEND", "ollama")
 
 from imi.integrations.langchain import IMIMemory
 
