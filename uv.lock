@@ -815,6 +815,7 @@ version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "chromadb" },
+    { name = "mcp", extra = ["cli"] },
     { name = "numpy" },
     { name = "sentence-transformers" },
 ]
@@ -863,6 +864,7 @@ requires-dist = [
     { name = "imi-memory", extras = ["mcp"], marker = "extra == 'all'" },
     { name = "imi-memory", extras = ["spatial"], marker = "extra == 'all'" },
     { name = "langchain-core", marker = "extra == 'langchain'", specifier = ">=0.3.0" },
+    { name = "mcp", extras = ["cli"], specifier = ">=1.0.0" },
     { name = "mcp", extras = ["cli"], marker = "extra == 'mcp'", specifier = ">=1.0.0" },
     { name = "numpy", specifier = ">=1.26.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
