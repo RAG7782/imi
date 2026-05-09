@@ -32,3 +32,4 @@ HANDOFF-*.md
 *.db-shm
 *.db-wal
 *.db-journal
+logs/
