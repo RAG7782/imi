@@ -125,10 +125,20 @@ def hybrid_score(
         f1 = 0.0
 
     # F2 — Tag match (Jaccard: |intersection| / |union|)
+    # When tags are absent on the node, fall back to soft token overlap on the
+    # node seed (SDE text) vs query terms — preserves signal in tag-sparse corpora.
     node_tags = {t.lower() for t in node.tags} if node.tags else set()
     if query_tags and node_tags:
         union = query_tags | node_tags
         f2 = len(query_tags & node_tags) / len(union)
+    elif query_tags and node.seed:
+        # Soft fallback: token overlap on seed text
+        seed_tokens = {w.lower() for w in node.seed.split() if len(w) > 3}
+        if seed_tokens:
+            overlap = query_tags & seed_tokens
+            f2 = len(overlap) / len(query_tags) * 0.5  # half-weight for soft match
+        else:
+            f2 = 0.0
     else:
         f2 = 0.0
 

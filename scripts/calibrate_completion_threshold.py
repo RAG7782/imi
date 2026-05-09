@@ -36,7 +36,10 @@ import numpy as np
 def _load_space():
     from imi.space import IMISpace
 
-    db_path = os.environ.get("IMI_DB", os.path.expanduser("~/.imi/imi_memory.db"))
+    # Prefer the project DB (has real encoded nodes), fall back to ~/.imi
+    default_db = os.path.join(os.path.dirname(__file__), "..", "imi_memory.db")
+    default_db = os.path.normpath(default_db)
+    db_path = os.environ.get("IMI_DB", default_db)
     return IMISpace.from_sqlite(db_path)
 
 
@@ -44,7 +47,7 @@ def _generate_fragments(space, n: int = 50):
     """Generate (target_node, fragment) pairs with 3 truncation strategies."""
     nodes = [
         n
-        for n in space.episodic.all_nodes()
+        for n in space.episodic.nodes
         if n.seed and len(n.seed.split()) >= 6 and n.embedding is not None
     ]
     if not nodes:
