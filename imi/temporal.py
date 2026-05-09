@@ -8,9 +8,15 @@ Adds: temporal position, temporal search, temporal clustering.
 
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
+
+# A1: externalize temporal window — override via IMI_TEMPORAL_WINDOW_HOURS
+DEFAULT_TEMPORAL_WINDOW_HOURS: float = float(
+    os.getenv("IMI_TEMPORAL_WINDOW_HOURS", "1.0")
+)
 
 
 @dataclass
@@ -76,8 +82,10 @@ class TemporalIndex:
         self,
         node_id: str,
         timestamp: float | None = None,
-        temporal_window_hours: float = 1.0,
+        temporal_window_hours: float | None = None,
     ) -> TemporalContext:
+        if temporal_window_hours is None:
+            temporal_window_hours = DEFAULT_TEMPORAL_WINDOW_HOURS
         """Register a new memory's temporal context."""
         if not self._current_session:
             self.new_session()

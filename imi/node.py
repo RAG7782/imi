@@ -74,6 +74,12 @@ class MemoryNode:
     reconsolidation_count: int = 0
     last_reconsolidated: float = 0.0
 
+    # --- Temporal Validity (A1) ---
+    # When this memory expires (epoch). None = no expiry. Penalty applied in navigate().
+    valid_until: float | None = None
+    # Node ID that supersedes/invalidates this one (for chain tracking).
+    invalidated_by: str | None = None
+
     # L0-L3 Tiering (VIEW layer)
     tier: int = 3  # Default: L3 (deep). 0=identity, 1=hot facts, 2=filtered, 3=deep
     tier_updated_at: float = 0.0
@@ -160,6 +166,10 @@ class MemoryNode:
             "ds_d": self.ds_d,
             "entities": self.entities,
         }
+        if self.valid_until is not None:
+            d["valid_until"] = self.valid_until
+        if self.invalidated_by is not None:
+            d["invalidated_by"] = self.invalidated_by
         if self.mw_data is not None:
             d["mw_data"] = self.mw_data
         if self.original is not None:

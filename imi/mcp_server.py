@@ -190,8 +190,15 @@ def im_enc(
     context_hint: str = "",
     occurred_at: str = "",
     resolves_intent: str = "",
+    expires_in_days: float = 0.0,
+    salience: float = 0.0,
+    surprise: float = 0.0,
 ) -> str:
-    """Store new memory from experience. resolves_intent: intent_id to auto-fulfill when this memory is stored."""
+    """Store new memory from experience.
+    resolves_intent: intent_id to auto-fulfill.
+    expires_in_days: >0 sets valid_until on the node (temporal validity, A1).
+    salience: override affect.salience (0=auto). surprise: override surprise_magnitude (0=auto).
+    """
     import time as _time
     from datetime import datetime, timezone
 
@@ -223,6 +230,16 @@ def im_enc(
             context_hint=context_hint, timestamp=event_timestamp,
         )
     node.occurred_at = occurred_float
+
+    # A1 — Temporal Validity: set expiry if caller requested it
+    if expires_in_days and expires_in_days > 0:
+        node.valid_until = _time_module.time() + expires_in_days * 86400
+
+    # A1 — Salience / surprise overrides (used by bridges like auto-browser)
+    if salience and salience > 0.0:
+        node.affect.salience = max(0.0, min(1.0, salience))
+    if surprise and surprise > 0.0:
+        node.surprise_magnitude = max(0.0, min(1.0, surprise))
 
     # IMI-E04 S06: Check for pending intentions with tag/keyword overlap
     related_intentions = _find_related_intentions(space, tag_list or [], experience)
@@ -275,6 +292,39 @@ def im_enc(
         pass
 
     return json.dumps(result, ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+def im_complete(fragment: str, threshold: float = 0.0) -> str:
+    """A4 — Pattern Completion: reconstruct full memory from a partial cue.
+
+    Given a fragment (a few words or truncated phrase), returns the most
+    likely matching MemoryNode via token-overlap + graph expansion.
+
+    threshold: minimum Jaccard overlap to accept a match (0 = use
+               IMI_COMPLETION_THRESHOLD env var, default 0.35).
+    Calibrate first: python scripts/calibrate_completion_threshold.py
+    """
+    from imi.completion import reconstruct_from_partial
+
+    space = _get_space()
+    t = threshold if threshold > 0.0 else None
+
+    node = reconstruct_from_partial(space, fragment, threshold=t)
+    if node is None:
+        return json.dumps({"found": False, "fragment": fragment}, ensure_ascii=False)
+
+    return json.dumps({
+        "found": True,
+        "id": node.id,
+        "seed": node.seed,
+        "summary": node.summary_medium,
+        "tags": node.tags,
+        "affect": {
+            "salience": node.affect.salience if node.affect else 0,
+            "valence": node.affect.valence if node.affect else 0,
+        },
+    }, ensure_ascii=False, indent=2)
 
 
 def _mw_score_from_node(node) -> float:

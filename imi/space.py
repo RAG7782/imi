@@ -18,6 +18,8 @@ from typing import Any
 import numpy as np
 
 from imi.adaptive import AdaptiveRW
+from imi.cache import wrap_with_cache
+from imi.search import HYBRID_SCORER_ENABLED, hybrid_score
 from imi.affect import AffectiveTag, assess_affect
 from imi.affordance import Affordance, extract_affordances
 from imi.anchors import Anchor, ConfidenceReport, extract_anchors, compute_confidence
@@ -129,6 +131,9 @@ class IMISpace:
             self.episodic.store_name = "episodic"
             self.semantic.backend = self.backend
             self.semantic.store_name = "semantic"
+
+        # LRU Embedding Cache (transparent wrap when IMI_EMBED_CACHE=1)
+        self.embedder = wrap_with_cache(self.embedder)
 
         # L0-L3 Tiering (VIEW layer)
         self._l0: L0Identity = L0Identity.load()
@@ -322,6 +327,28 @@ class IMISpace:
             )
 
         all_results = episodic_results + semantic_results
+
+        # A2 — Hybrid Scorer: re-rank candidates with 6-factor score when enabled.
+        # Rollback: export IMI_HYBRID_SCORER=0
+        if HYBRID_SCORER_ENABLED:
+            query_tags = {t.lower() for t in (context or "").split() if len(t) > 2}
+            all_results = [
+                (node, hybrid_score(node, query_emb, query_tags))
+                for node, _legacy in all_results
+            ]
+
+        # A1 — Temporal Validity: apply exponential decay for expired memories.
+        # Half-life ~1.4 days past expiry. Node is NOT removed — audit trail preserved.
+        _now = time.time()
+        decayed = []
+        for node, score in all_results:
+            if node.valid_until is not None and node.valid_until < _now:
+                import math
+                days_past = (_now - node.valid_until) / 86400
+                score = score * math.exp(-0.5 * days_past)
+            decayed.append((node, score))
+        all_results = decayed
+
         all_results.sort(key=lambda x: x[1], reverse=True)
         all_results = all_results[:top_k]
 

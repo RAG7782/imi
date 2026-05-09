@@ -171,26 +171,62 @@ def consolidate(
     """Convert episodic clusters into semantic patterns.
 
     This is the sleep/dream consolidation: episodic → semantic.
+
+    A3 — Cluster Consolidation with LLM cross-synthesis:
+    - Clusters with >= IMI_CONSOLIDATION_MIN_CLUSTER members use LLM to
+      synthesise a cross-episode pattern (not just summarise the top node).
+    - Budget cap: IMI_CONSOLIDATION_LLM_BUDGET LLM calls per cycle (default 5)
+      to prevent runaway phi4-mini usage.
+    - Fallback: clusters below the threshold use the strongest node's summary
+      (original behaviour).
     """
+    import os as _os
+    _min_cluster = int(_os.getenv("IMI_CONSOLIDATION_MIN_CLUSTER", "3"))
+    _llm_budget = int(_os.getenv("IMI_CONSOLIDATION_LLM_BUDGET", "5"))
+
     llm = llm or get_llm()
     new_patterns = []
+    _llm_calls = 0
 
     for cluster in clusters:
         # Collect seeds from the cluster
         seeds = [n.seed for n in cluster]
         seeds_text = "\n---\n".join(seeds)
 
-        # Ask LLM to generalize the pattern
-        pattern_summary = llm.generate(
-            system=(
-                "You are a pattern recognition engine. Given multiple related memories, "
-                "extract the GENERAL PATTERN — not a summary of the individual events, "
-                "but the recurring theme or rule they demonstrate. "
-                "Write in the same language as the input. Be concise (max 60 tokens)."
-            ),
-            prompt=f"Related memories:\n{seeds_text}\n\nWhat general pattern do these demonstrate?",
-            max_tokens=120,
-        )
+        # A3 — Cross-cluster synthesis when cluster is large enough and budget allows.
+        if len(cluster) >= _min_cluster and _llm_calls < _llm_budget:
+            all_summaries = "\n".join(
+                n.summary_medium for n in cluster if n.summary_medium
+            )
+            try:
+                pattern_summary = llm.generate(
+                    system=(
+                        "You are a pattern synthesis engine. Given related memory summaries, "
+                        "extract the EMERGENT PATTERN — the recurring theme across ALL episodes, "
+                        "not a summary of any single one. "
+                        "Write in the same language as the input. Max 80 tokens."
+                    ),
+                    prompt=f"Memory summaries:\n{all_summaries}\n\nEmergent pattern:",
+                    max_tokens=80,
+                )
+                _llm_calls += 1
+            except Exception:
+                # Fallback to strongest node summary on LLM failure
+                strongest = max(cluster, key=lambda n: n.affect.salience if n.affect else 0)
+                pattern_summary = strongest.summary_medium or seeds[0]
+        else:
+            # Original behaviour: use strongest node's medium summary
+            strongest = max(cluster, key=lambda n: n.affect.salience if n.affect else 0)
+            pattern_summary = strongest.summary_medium or llm.generate(
+                system=(
+                    "You are a pattern recognition engine. Given multiple related memories, "
+                    "extract the GENERAL PATTERN — not a summary of the individual events, "
+                    "but the recurring theme or rule they demonstrate. "
+                    "Write in the same language as the input. Be concise (max 60 tokens)."
+                ),
+                prompt=f"Related memories:\n{seeds_text}\n\nWhat general pattern do these demonstrate?",
+                max_tokens=120,
+            )
 
         # Embed the pattern
         pattern_emb = embedder.embed(pattern_summary)
