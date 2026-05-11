@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from imi.adaptive import AdaptiveRW, QueryIntent
-from imi.causal import detect_causal_candidates, auto_link_causal
-from imi.graph import Edge, EdgeType, MemoryGraph
+from imi.causal import auto_link_causal, detect_causal_candidates
+from imi.graph import EdgeType, MemoryGraph
 from imi.node import MemoryNode
 from imi.store import VectorStore
 

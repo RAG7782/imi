@@ -1,19 +1,20 @@
 """Tests for the MCP server tools."""
 
 import json
-import pytest
+
 import numpy as np
+import pytest
 
 import imi.mcp_server as mcp_mod
-from imi.space import IMISpace
 from imi.mcp_server import (
-    im_enc,
-    im_nav,
     im_drm,
+    im_enc,
+    im_glnk,
+    im_nav,
     im_sact,
     im_sts,
-    im_glnk,
 )
+from imi.space import IMISpace
 
 
 class DummyEmbedder:

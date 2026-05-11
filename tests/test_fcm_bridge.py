@@ -8,9 +8,7 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
@@ -251,7 +249,7 @@ class TestTrustGradient:
 class TestEchoPrevention:
     def test_poll_ignores_own_source_events(self, tmp_path):
         """poll_clawvault_events should skip events from the bridge's own source."""
-        from imi.integrations.fcm_bridge import FCMBridge, FCM_EVENTS_DIR
+        from imi.integrations.fcm_bridge import FCM_EVENTS_DIR, FCMBridge
 
         bridge = FCMBridge(source="imi")
 
@@ -274,7 +272,7 @@ class TestEchoPrevention:
 
     def test_poll_accepts_clawvault_source(self, tmp_path):
         """poll_clawvault_events should accept events from source=clawvault."""
-        from imi.integrations.fcm_bridge import FCMBridge, FCM_EVENTS_DIR
+        from imi.integrations.fcm_bridge import FCM_EVENTS_DIR, FCMBridge
 
         bridge = FCMBridge(source="imi")
 
@@ -297,7 +295,7 @@ class TestEchoPrevention:
 
     def test_poll_rejects_non_clawvault_non_self(self, tmp_path):
         """poll_clawvault_events only accepts source=clawvault."""
-        from imi.integrations.fcm_bridge import FCMBridge, FCM_EVENTS_DIR
+        from imi.integrations.fcm_bridge import FCM_EVENTS_DIR, FCMBridge
 
         bridge = FCMBridge(source="imi")
 
@@ -323,7 +321,7 @@ class TestEchoPrevention:
 
 class TestLoopPrevention:
     def test_poll_skips_events_with_federated_tag(self, tmp_path):
-        from imi.integrations.fcm_bridge import FCMBridge, FCM_EVENTS_DIR
+        from imi.integrations.fcm_bridge import FCM_EVENTS_DIR, FCMBridge
 
         bridge = FCMBridge(source="imi")
 
@@ -344,7 +342,7 @@ class TestLoopPrevention:
         assert len(events) == 0
 
     def test_poll_skips_events_with_from_imi_tag(self, tmp_path):
-        from imi.integrations.fcm_bridge import FCMBridge, FCM_EVENTS_DIR
+        from imi.integrations.fcm_bridge import FCM_EVENTS_DIR, FCMBridge
 
         bridge = FCMBridge(source="imi")
 
@@ -365,7 +363,7 @@ class TestLoopPrevention:
         assert len(events) == 0
 
     def test_poll_skips_from_clawvault_tag(self, tmp_path):
-        from imi.integrations.fcm_bridge import FCMBridge, FCM_EVENTS_DIR
+        from imi.integrations.fcm_bridge import FCM_EVENTS_DIR, FCMBridge
 
         bridge = FCMBridge(source="imi")
 
@@ -386,7 +384,7 @@ class TestLoopPrevention:
         assert len(events) == 0
 
     def test_poll_skips_from_external_tag(self, tmp_path):
-        from imi.integrations.fcm_bridge import FCMBridge, FCM_EVENTS_DIR
+        from imi.integrations.fcm_bridge import FCM_EVENTS_DIR, FCMBridge
 
         bridge = FCMBridge(source="imi")
 
@@ -412,7 +410,7 @@ class TestLoopPrevention:
 
 class TestMarkConsumed:
     def test_moves_file_to_processed(self, tmp_path):
-        from imi.integrations.fcm_bridge import FCMBridge, FCM_EVENTS_DIR, FCM_PROCESSED_DIR
+        from imi.integrations.fcm_bridge import FCM_EVENTS_DIR, FCM_PROCESSED_DIR, FCMBridge
 
         bridge = FCMBridge(source="imi")
 
@@ -429,7 +427,7 @@ class TestMarkConsumed:
         assert (FCM_PROCESSED_DIR / "consume_test.json").exists()
 
     def test_tracks_consumed_id(self, tmp_path):
-        from imi.integrations.fcm_bridge import FCMBridge, FCM_EVENTS_DIR
+        from imi.integrations.fcm_bridge import FCM_EVENTS_DIR, FCMBridge
 
         bridge = FCMBridge(source="imi")
 
@@ -445,7 +443,7 @@ class TestMarkConsumed:
         assert "consume-test-2" in bridge._consumed_ids
 
     def test_consumed_events_skipped_in_poll(self, tmp_path):
-        from imi.integrations.fcm_bridge import FCMBridge, FCM_EVENTS_DIR
+        from imi.integrations.fcm_bridge import FCM_EVENTS_DIR, FCMBridge
 
         bridge = FCMBridge(source="imi")
 

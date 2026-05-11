@@ -5,20 +5,18 @@ JSONBackend and SQLiteBackend tests run without any infrastructure.
 
 from __future__ import annotations
 
-import json
 import time
 
 import numpy as np
 import pytest
 
-from imi.events import ENCODE, CONSOLIDATE, MemoryEvent
+from imi.events import CONSOLIDATE, ENCODE, MemoryEvent
 from imi.graph import EdgeType
 from imi.node import MemoryNode
 from imi.reconsolidate import ReconsolidationEvent
 from imi.space import IMISpace
 from imi.storage import JSONBackend, SQLiteBackend
 from imi.temporal import TemporalContext
-
 
 # ---------------------------------------------------------------------------
 # Helpers

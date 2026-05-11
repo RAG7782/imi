@@ -1,13 +1,15 @@
 """Tests for L0-L3 tiering."""
-import pytest
-import time
 import numpy as np
-from imi.node import MemoryNode
+
 from imi.affect import AffectiveTag
 from imi.affordance import Affordance
+from imi.node import MemoryNode
 from imi.tiering import (
-    L0Identity, L1HotFacts, generate_l1, compute_tier,
-    apply_tiering, get_tier_stats,
+    L0Identity,
+    apply_tiering,
+    compute_tier,
+    generate_l1,
+    get_tier_stats,
 )
 
 
@@ -92,7 +94,12 @@ class TestL1Generation:
         assert l1.facts[0]["tags"][0] == "channel_a"
 
     def test_affordances_extraction(self):
-        aff = Affordance(action="deploy service", confidence=0.95, conditions="when tests pass", domain="ops")
+        aff = Affordance(
+            action="deploy service",
+            confidence=0.95,
+            conditions="when tests pass",
+            domain="ops",
+        )
         nodes = [_make_node("deploy decision", salience=0.8, affordances=[aff])]
         l1 = generate_l1(nodes)
         assert len(l1.affordances) >= 1
