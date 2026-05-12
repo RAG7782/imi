@@ -163,7 +163,10 @@ class MemoryGraph:
                 for neighbor_id, edge in self.neighbors(nid, edge_type):
                     new_score = score * edge.weight * decay
                     if neighbor_id not in activation:
-                        if neighbor_id not in next_frontier or next_frontier[neighbor_id] < new_score:
+                        if (
+                            neighbor_id not in next_frontier
+                            or next_frontier[neighbor_id] < new_score
+                        ):
                             next_frontier[neighbor_id] = new_score
 
             frontier = next_frontier

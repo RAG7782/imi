@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
-import json
 import urllib.request
 from dataclasses import dataclass, field
 from typing import Protocol
@@ -14,7 +14,9 @@ from typing import Protocol
 class LLMAdapter(Protocol):
     """Protocol for any LLM backend."""
 
-    def generate(self, system: str, prompt: str, max_tokens: int = 1024, temperature: float | None = None) -> str: ...
+    def generate(
+        self, system: str, prompt: str, max_tokens: int = 1024, temperature: float | None = None
+    ) -> str: ...
 
 
 @dataclass
@@ -29,7 +31,9 @@ class ClaudeLLM:
 
         self._client = anthropic.Anthropic()
 
-    def generate(self, system: str, prompt: str, max_tokens: int = 1024, temperature: float | None = None) -> str:
+    def generate(
+        self, system: str, prompt: str, max_tokens: int = 1024, temperature: float | None = None
+    ) -> str:
         kwargs: dict = {
             "model": self.model,
             "max_tokens": max_tokens,
@@ -52,16 +56,22 @@ class ClaudeCodeLLM:
 
     model: str = "claude-sonnet-4-5"
 
-    def generate(self, system: str, prompt: str, max_tokens: int = 1024, temperature: float | None = None) -> str:
+    def generate(
+        self, system: str, prompt: str, max_tokens: int = 1024, temperature: float | None = None
+    ) -> str:
         full_prompt = f"{system}\n\n{prompt}" if system else prompt
         # --effort low keeps responses concise; claude CLI has no --max-tokens flag
         effort = "low" if max_tokens <= 512 else "medium"
         cmd = [
             "claude",
-            "-p", full_prompt,
-            "--model", self.model,
-            "--effort", effort,
-            "--output-format", "text",
+            "-p",
+            full_prompt,
+            "--model",
+            self.model,
+            "--effort",
+            effort,
+            "--output-format",
+            "text",
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         if result.returncode != 0:
@@ -85,17 +95,21 @@ class OllamaLLM:
     model: str = "phi4-mini:latest"
     base_url: str = "http://localhost:11434"
 
-    def generate(self, system: str, prompt: str, max_tokens: int = 1024, temperature: float | None = None) -> str:
+    def generate(
+        self, system: str, prompt: str, max_tokens: int = 1024, temperature: float | None = None
+    ) -> str:
         full_prompt = f"{system}\n\n{prompt}" if system else prompt
-        payload = json.dumps({
-            "model": self.model,
-            "prompt": full_prompt,
-            "stream": False,
-            "options": {
-                "temperature": temperature if temperature is not None else 0.1,
-                "num_predict": min(max_tokens, 512),
-            },
-        }).encode()
+        payload = json.dumps(
+            {
+                "model": self.model,
+                "prompt": full_prompt,
+                "stream": False,
+                "options": {
+                    "temperature": temperature if temperature is not None else 0.1,
+                    "num_predict": min(max_tokens, 512),
+                },
+            }
+        ).encode()
         req = urllib.request.Request(
             f"{self.base_url}/api/generate",
             data=payload,

@@ -2,15 +2,14 @@
 
 import argparse
 import json
-import sys
 
 from imi.benchmark import AMBench
-from imi.benchmark.tiered_recall import TieredRecall
-from imi.benchmark.tiered_efficiency import TieredEfficiency
 from imi.benchmark.cross_session import CrossSession
-from imi.benchmark.sd_retrieval import SDRetrieval
-from imi.benchmark.longmem_eval import LongMemEval
 from imi.benchmark.federated_recall import FederatedRecall
+from imi.benchmark.longmem_eval import LongMemEval
+from imi.benchmark.sd_retrieval import SDRetrieval
+from imi.benchmark.tiered_efficiency import TieredEfficiency
+from imi.benchmark.tiered_recall import TieredRecall
 
 
 def main():
@@ -31,14 +30,20 @@ Examples:
   python -m imi.benchmark --json                       # JSON output
 """,
     )
-    parser.add_argument("--suite", choices=["ambench", "tiered", "cross", "sd", "longmem", "federated", "full"],
-                        default="ambench", help="Benchmark suite to run")
+    parser.add_argument(
+        "--suite",
+        choices=["ambench", "tiered", "cross", "sd", "longmem", "federated", "full"],
+        default="ambench",
+        help="Benchmark suite to run",
+    )
     parser.add_argument("--incidents", type=int, default=300, help="Number of incidents")
     parser.add_argument("--days", type=int, default=90, help="Simulated days")
     parser.add_argument("--rw", type=float, default=0.10, help="Relevance weight")
     parser.add_argument("--name", default="IMI", help="System name")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
-    parser.add_argument("--sessions", type=int, default=30, help="Sessions (for cross/tiered-efficiency)")
+    parser.add_argument(
+        "--sessions", type=int, default=30, help="Sessions (for cross/tiered-efficiency)"
+    )
     parser.add_argument("--json", action="store_true", help="JSON output")
     args = parser.parse_args()
 
@@ -81,8 +86,10 @@ Examples:
             print("=" * 60)
 
         bench = TieredEfficiency(
-            n_incidents=args.incidents, n_days=args.days,
-            seed=args.seed, n_sessions=args.sessions,
+            n_incidents=args.incidents,
+            n_days=args.days,
+            seed=args.seed,
+            n_sessions=args.sessions,
         )
         results = bench.run(system_name=args.name)
 
@@ -99,8 +106,10 @@ Examples:
             print("=" * 60)
 
         bench = CrossSession(
-            n_incidents=args.incidents, n_days=args.days,
-            n_sessions=args.sessions, seed=args.seed,
+            n_incidents=args.incidents,
+            n_days=args.days,
+            n_sessions=args.sessions,
+            seed=args.seed,
         )
         results = bench.run(system_name=args.name, relevance_weight=args.rw)
 

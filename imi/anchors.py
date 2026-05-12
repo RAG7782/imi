@@ -6,21 +6,19 @@ They constrain reconstruction and provide confidence scoring.
 
 from __future__ import annotations
 
-import hashlib
 import os
 import subprocess
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
 
 class AnchorType(str, Enum):
-    FILE = "file"           # path to a file that existed
-    COMMIT = "commit"       # git commit SHA
-    FACT = "fact"           # verifiable factual statement
-    DATE = "date"           # specific date/time
-    ENTITY = "entity"       # named entity (person, tool, service)
+    FILE = "file"  # path to a file that existed
+    COMMIT = "commit"  # git commit SHA
+    FACT = "fact"  # verifiable factual statement
+    DATE = "date"  # specific date/time
+    ENTITY = "entity"  # named entity (person, tool, service)
 
 
 @dataclass
@@ -28,9 +26,9 @@ class Anchor:
     """A verifiable fact tied to a memory."""
 
     type: AnchorType
-    reference: str          # the fact/path/SHA itself
-    snapshot: str = ""      # literal text from the original experience
-    hash: str = ""          # hash of the referenced content at encoding time
+    reference: str  # the fact/path/SHA itself
+    snapshot: str = ""  # literal text from the original experience
+    hash: str = ""  # hash of the referenced content at encoding time
     verified_at: float = 0.0
 
     def verify(self) -> bool | None:
@@ -45,7 +43,9 @@ class Anchor:
             try:
                 result = subprocess.run(
                     ["git", "log", "-1", "--format=%H", self.reference],
-                    capture_output=True, text=True, timeout=5,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
                 )
                 return result.returncode == 0
             except (subprocess.TimeoutExpired, FileNotFoundError):
@@ -77,10 +77,10 @@ class Anchor:
 class ConfidenceReport:
     """Result of verifying a reconstruction against anchors."""
 
-    hard_facts: list[str]       # verified, trustworthy
-    soft_claims: list[str]      # plausible but unverified
-    warnings: list[str]         # potential confabulation
-    confidence: float           # 0.0-1.0 overall
+    hard_facts: list[str]  # verified, trustworthy
+    soft_claims: list[str]  # plausible but unverified
+    warnings: list[str]  # potential confabulation
+    confidence: float  # 0.0-1.0 overall
 
     def __str__(self) -> str:
         lines = [f"Confidence: {self.confidence:.0%}"]
@@ -104,7 +104,11 @@ def extract_anchors(experience: str, llm) -> list[Anchor]:
     import json as _json
 
     prompt = f"""Extract verifiable facts from this experience. Return JSON array.
-Each item: {{"type": "fact|date|entity|file|commit", "reference": "the fact", "snapshot": "exact quote from text"}}
+Each item: {{
+  "type": "fact|date|entity|file|commit",
+  "reference": "the fact",
+  "snapshot": "exact quote from text"
+}}
 
 Only extract what is explicitly stated. Do not infer.
 
@@ -176,7 +180,6 @@ def compute_confidence(
 
     # Confidence: proportion of anchors that are verified or at least not contradicted
     total = len(anchors)
-    contradicted = len(warnings)
     verified = len(hard)
 
     if total == 0:

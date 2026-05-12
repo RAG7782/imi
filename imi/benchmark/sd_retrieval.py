@@ -19,7 +19,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from ..dialect import compute_ds_d, extract_entities
+from ..dialect import compute_ds_d
 from ..embedder import SentenceTransformerEmbedder
 from ..node import MemoryNode
 from ..store import VectorStore
@@ -29,11 +29,12 @@ from .ambench import generate_incidents, recall_at_k
 @dataclass
 class SDRetrievalResults:
     """Results from SD Retrieval benchmark."""
-    baseline_r5: float = 0.0        # Recall@5 without DS-d scoring
-    sd_r5: float = 0.0              # Recall@5 with DS-d weighted results
-    improvement_pct: float = 0.0    # (sd_r5 - baseline_r5) / baseline_r5 * 100
-    ds_d_mean: float = 0.0          # Mean DS-d across all incidents
-    ds_d_std: float = 0.0           # Std of DS-d scores
+
+    baseline_r5: float = 0.0  # Recall@5 without DS-d scoring
+    sd_r5: float = 0.0  # Recall@5 with DS-d weighted results
+    improvement_pct: float = 0.0  # (sd_r5 - baseline_r5) / baseline_r5 * 100
+    ds_d_mean: float = 0.0  # Mean DS-d across all incidents
+    ds_d_std: float = 0.0  # Std of DS-d scores
     n_incidents: int = 0
     n_queries: int = 0
     duration_s: float = 0.0
@@ -133,7 +134,6 @@ class SDRetrieval:
         sd_hits = 0
         n_evals = 0
 
-        rng = np.random.RandomState(self.seed)
         eval_indices = list(range(eval_every, len(self.incidents), eval_every))
 
         for idx in eval_indices:
@@ -143,17 +143,15 @@ class SDRetrieval:
 
             # Baseline: standard cosine search
             baseline_results = store.search(
-                query_emb, top_k=10, relevance_weight=0.0  # pure cosine
+                query_emb,
+                top_k=10,
+                relevance_weight=0.0,  # pure cosine
             )
-            baseline_patterns = [
-                n.tags[0] if n.tags else "" for n, _ in baseline_results
-            ]
+            baseline_patterns = [n.tags[0] if n.tags else "" for n, _ in baseline_results]
             baseline_r5 = recall_at_k(baseline_patterns, target, k=5)
 
             # SD-weighted: re-rank by combining cosine score with DS-d
-            sd_results = store.search(
-                query_emb, top_k=10, relevance_weight=relevance_weight
-            )
+            sd_results = store.search(query_emb, top_k=10, relevance_weight=relevance_weight)
             # Re-rank: boost results with higher DS-d
             reranked = []
             for node, score in sd_results:
@@ -163,9 +161,7 @@ class SDRetrieval:
                 reranked.append((node, combined))
             reranked.sort(key=lambda x: x[1], reverse=True)
 
-            sd_patterns = [
-                n.tags[0] if n.tags else "" for n, _ in reranked
-            ]
+            sd_patterns = [n.tags[0] if n.tags else "" for n, _ in reranked]
             sd_r5 = recall_at_k(sd_patterns, target, k=5)
 
             baseline_hits += baseline_r5
@@ -176,10 +172,7 @@ class SDRetrieval:
 
         avg_baseline = baseline_hits / n_evals if n_evals > 0 else 0
         avg_sd = sd_hits / n_evals if n_evals > 0 else 0
-        improvement = (
-            (avg_sd - avg_baseline) / avg_baseline * 100
-            if avg_baseline > 0 else 0.0
-        )
+        improvement = (avg_sd - avg_baseline) / avg_baseline * 100 if avg_baseline > 0 else 0.0
 
         return SDRetrievalResults(
             baseline_r5=avg_baseline,

@@ -42,6 +42,6 @@ def positional_reorder(items: list[T]) -> list[T]:
     if len(items) <= 2:
         return list(items)
 
-    start = items[::2]       # indices 0, 2, 4, ...
+    start = items[::2]  # indices 0, 2, 4, ...
     end = items[1::2][::-1]  # indices 1, 3, 5, ... reversed
     return start + end

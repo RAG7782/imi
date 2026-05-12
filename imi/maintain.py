@@ -15,7 +15,7 @@ from typing import Any
 
 import numpy as np
 
-from imi.core import get_llm, summarize
+from imi.core import get_llm
 from imi.embedder import Embedder
 from imi.events import (
     CONSOLIDATE,
@@ -37,10 +37,10 @@ class PatternNode:
     """
 
     id: str = ""
-    summary: str = ""                    # what the pattern IS
-    source_count: int = 0                # how many episodes generated it
+    summary: str = ""  # what the pattern IS
+    source_count: int = 0  # how many episodes generated it
     source_ids: list[str] = field(default_factory=list)
-    strength: float = 0.0                # 0-1, how confident the pattern is
+    strength: float = 0.0  # 0-1, how confident the pattern is
     embedding: np.ndarray | None = field(default=None, repr=False)
     created_at: float = field(default_factory=time.time)
     tags: list[str] = field(default_factory=list)
@@ -72,11 +72,11 @@ class PatternNode:
 class MaintenanceReport:
     """What happened during a maintenance cycle."""
 
-    faded: int = 0                  # nodes that lost relevance
-    consolidated: int = 0           # patterns created/strengthened
-    pruned: int = 0                 # low-relevance nodes removed from fast store
+    faded: int = 0  # nodes that lost relevance
+    consolidated: int = 0  # patterns created/strengthened
+    pruned: int = 0  # low-relevance nodes removed from fast store
     patterns_total: int = 0
-    nodes_processed: int = 0        # total episodic nodes examined
+    nodes_processed: int = 0  # total episodic nodes examined
     duration_ms: float = 0
 
     @property
@@ -181,6 +181,7 @@ def consolidate(
       (original behaviour).
     """
     import os as _os
+
     _min_cluster = int(_os.getenv("IMI_CONSOLIDATION_MIN_CLUSTER", "3"))
     _llm_budget = int(_os.getenv("IMI_CONSOLIDATION_LLM_BUDGET", "5"))
 
@@ -195,9 +196,7 @@ def consolidate(
 
         # A3 — Cross-cluster synthesis when cluster is large enough and budget allows.
         if len(cluster) >= _min_cluster and _llm_calls < _llm_budget:
-            all_summaries = "\n".join(
-                n.summary_medium for n in cluster if n.summary_medium
-            )
+            all_summaries = "\n".join(n.summary_medium for n in cluster if n.summary_medium)
             try:
                 pattern_summary = llm.generate(
                     system=(
@@ -224,7 +223,9 @@ def consolidate(
                     "but the recurring theme or rule they demonstrate. "
                     "Write in the same language as the input. Be concise (max 60 tokens)."
                 ),
-                prompt=f"Related memories:\n{seeds_text}\n\nWhat general pattern do these demonstrate?",
+                prompt=(
+                    f"Related memories:\n{seeds_text}\n\nWhat general pattern do these demonstrate?"
+                ),
                 max_tokens=120,
             )
 
@@ -252,19 +253,24 @@ def consolidate(
             existing_node.access_count += len(cluster)
             existing_node.tags = list(set(existing_node.tags + all_tags))
             if semantic_store.backend:
-                semantic_store.backend.log_event(MemoryEvent(
-                    event_type=CONSOLIDATE_STRENGTHEN,
-                    node_id=existing_node.id,
-                    store_name="semantic",
-                    metadata={
-                        "source_ids": [n.id for n in cluster],
-                        "new_access_count": existing_node.access_count,
-                    },
-                ))
+                semantic_store.backend.log_event(
+                    MemoryEvent(
+                        event_type=CONSOLIDATE_STRENGTHEN,
+                        node_id=existing_node.id,
+                        store_name="semantic",
+                        metadata={
+                            "source_ids": [n.id for n in cluster],
+                            "new_access_count": existing_node.access_count,
+                        },
+                    )
+                )
         else:
             # H7 fix: patterns inherit aggregated affect/mass from source episodes
             from imi.affect import AffectiveTag
-            avg_salience = sum(n.affect.salience for n in cluster if n.affect) / max(len(cluster), 1)
+
+            avg_salience = sum(n.affect.salience for n in cluster if n.affect) / max(
+                len(cluster), 1
+            )
             avg_valence = sum(n.affect.valence for n in cluster if n.affect) / max(len(cluster), 1)
             avg_arousal = sum(n.affect.arousal for n in cluster if n.affect) / max(len(cluster), 1)
             total_mass = sum(n.mass for n in cluster)
@@ -276,7 +282,9 @@ def consolidate(
                 id=pattern.id,
                 summary_orbital=f"[PATTERN] {pattern_summary[:50]}",
                 summary_medium=f"[PATTERN] {pattern_summary}",
-                summary_detailed=f"[PATTERN] {pattern_summary} (from {pattern.source_count} experiences)",
+                summary_detailed=(
+                    f"[PATTERN] {pattern_summary} (from {pattern.source_count} experiences)"
+                ),
                 seed=pattern_summary,
                 embedding=pattern_emb,
                 tags=all_tags + ["_pattern"],
@@ -313,12 +321,14 @@ def run_maintenance(
     # 1. Fade
     faded = fade(episodic)
     if backend and faded > 0:
-        backend.log_event(MemoryEvent(
-            event_type=FADE_CYCLE,
-            node_id="*",
-            store_name="episodic",
-            metadata={"faded_count": faded},
-        ))
+        backend.log_event(
+            MemoryEvent(
+                event_type=FADE_CYCLE,
+                node_id="*",
+                store_name="episodic",
+                metadata={"faded_count": faded},
+            )
+        )
 
     # 2. Find clusters of similar episodic memories
     clusters = find_clusters(episodic, similarity_threshold=similarity_threshold)
@@ -329,16 +339,18 @@ def run_maintenance(
         consolidated = len(patterns)
         if backend:
             for p in patterns:
-                backend.log_event(MemoryEvent(
-                    event_type=CONSOLIDATE,
-                    node_id=p.id,
-                    store_name="semantic",
-                    metadata={
-                        "source_ids": p.source_ids,
-                        "source_count": p.source_count,
-                        "strength": p.strength,
-                    },
-                ))
+                backend.log_event(
+                    MemoryEvent(
+                        event_type=CONSOLIDATE,
+                        node_id=p.id,
+                        store_name="semantic",
+                        metadata={
+                            "source_ids": p.source_ids,
+                            "source_count": p.source_count,
+                            "strength": p.strength,
+                        },
+                    )
+                )
     else:
         consolidated = 0
 
@@ -348,12 +360,14 @@ def run_maintenance(
         if node.relevance < 0.05 and "_keep" not in node.tags:
             pruned += 1
             if backend:
-                backend.log_event(MemoryEvent(
-                    event_type=PRUNE_CANDIDATE,
-                    node_id=node.id,
-                    store_name="episodic",
-                    metadata={"relevance": node.relevance},
-                ))
+                backend.log_event(
+                    MemoryEvent(
+                        event_type=PRUNE_CANDIDATE,
+                        node_id=node.id,
+                        store_name="episodic",
+                        metadata={"relevance": node.relevance},
+                    )
+                )
             # H6 fix: actually remove the node from the episodic store
             episodic.remove(node.id)
 

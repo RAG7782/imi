@@ -10,7 +10,6 @@ Usage:
 
 from __future__ import annotations
 
-import json
 import time
 from pathlib import Path
 
@@ -20,7 +19,6 @@ import pytest
 from imi.events import MemoryEvent
 from imi.node import MemoryNode
 from imi.storage import JSONBackend, SQLiteBackend, StorageBackend
-from imi.temporal import TemporalContext
 
 
 def make_node(i: int) -> MemoryNode:
@@ -89,9 +87,7 @@ class IMIBenchmarkHarness:
         """Time-range query (like navigate_temporal)."""
         now = time.time()
         t0 = time.perf_counter()
-        nodes = self.backend.query_by_time_range(
-            now - window_hours * 3600, now, "episodic"
-        )
+        nodes = self.backend.query_by_time_range(now - window_hours * 3600, now, "episodic")
         elapsed = time.perf_counter() - t0
         self.results["time_range_ms"] = elapsed * 1000
         self.results["time_range_hits"] = len(nodes)

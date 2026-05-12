@@ -12,6 +12,7 @@ This file does NOT modify the original — it wraps it.
 import json
 import os
 import sys
+import threading
 import time as _time_module
 from pathlib import Path
 
@@ -23,12 +24,10 @@ mcp = FastMCP("imi", port=int(os.environ.get("IMI_PORT", "8080")))
 
 # --- Singleton with TTL + diagnostics (IMI-E05 S01/S02/S05) ---
 
-import threading
-
 _space = None
 _space_loaded_at: float = 0.0
 _sqlite_load_count: int = 0
-_nav_latencies: list[float] = []   # ring buffer p50/p95
+_nav_latencies: list[float] = []  # ring buffer p50/p95
 _SPACE_TTL = float(os.environ.get("IMI_SPACE_TTL", "3600"))  # 1h default
 _LOG_FILE = Path.home() / ".claude" / "imi_boot.log"
 # H13 fix: RLock for thread-safe singleton access
@@ -66,6 +65,7 @@ def _get_space():
         if _space is None or (now - _space_loaded_at) > _SPACE_TTL:
             t0 = _time_module.monotonic()
             from imi.space import IMISpace
+
             db_path = os.environ.get("IMI_DB", "imi_memory.db")
             _space = IMISpace.from_sqlite(db_path)
             _space_loaded_at = now
@@ -77,9 +77,13 @@ def _get_space():
             )
         return _space
 
+
 # --- Tools (CoD Pass 2 descriptions) ---
 
-def _check_intent_resolved_in_memory(space, intent_id: str, intent_content: str, intent_tags: list) -> dict | None:
+
+def _check_intent_resolved_in_memory(
+    space, intent_id: str, intent_content: str, intent_tags: list
+) -> dict | None:
     """Camada A — verifica se uma intenção pendente já foi realizada em memória episódica recente.
 
     Busca episódios recentes (últimas 200 memórias não-intention) com overlap semântico
@@ -90,12 +94,28 @@ def _check_intent_resolved_in_memory(space, intent_id: str, intent_content: str,
     intent_words = set(w.lower() for w in intent_content.split() if len(w) > 4)
     intent_tag_set = set(t.lower() for t in (intent_tags or []))
     # Palavras que indicam conclusão
-    completion_signals = {"concluído", "concluida", "feito", "feita", "done", "completo", "finalizado",
-                          "publicado", "enviado", "implementado", "executado", "resolvido", "entregue"}
+    completion_signals = {
+        "concluído",
+        "concluida",
+        "feito",
+        "feita",
+        "done",
+        "completo",
+        "finalizado",
+        "publicado",
+        "enviado",
+        "implementado",
+        "executado",
+        "resolvido",
+        "entregue",
+    }
 
-    candidates = [n for n in reversed(space.episodic.nodes)
-                  if not n.summary_orbital.startswith("[INTENT:") and
-                     not n.summary_orbital.startswith("[DONE:")][:200]
+    candidates = [
+        n
+        for n in reversed(space.episodic.nodes)
+        if not n.summary_orbital.startswith("[INTENT:")
+        and not n.summary_orbital.startswith("[DONE:")
+    ][:200]
 
     for node in candidates:
         text = (node.original or node.summary_medium or "").lower()
@@ -132,8 +152,9 @@ def _find_related_intentions(space, tag_list: list[str], experience: str) -> lis
 
     matches = []
     for node in space.episodic.nodes:
-        if not (node.summary_orbital.startswith("[INTENT:") or
-                node.summary_orbital.startswith("[DONE:")):
+        if not (
+            node.summary_orbital.startswith("[INTENT:") or node.summary_orbital.startswith("[DONE:")
+        ):
             continue
         try:
             data = json.loads(node.seed)
@@ -199,8 +220,7 @@ def im_enc(
     expires_in_days: >0 sets valid_until on the node (temporal validity, A1).
     salience: override affect.salience (0=auto). surprise: override surprise_magnitude (0=auto).
     """
-    import time as _time
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     experience = _minify_experience(experience)
 
@@ -220,14 +240,22 @@ def im_enc(
     # Camada 1 — AIP Security: sanitização PII + crypto AES-256-GCM (opt-in via IMI_CRYPTO=1)
     try:
         from imi.integrations.crypto_layer import secure_encode
+
         node = secure_encode(
-            space, experience, tags=tag_list, source=source,
-            context_hint=context_hint, timestamp=event_timestamp,
+            space,
+            experience,
+            tags=tag_list,
+            source=source,
+            context_hint=context_hint,
+            timestamp=event_timestamp,
         )
     except ImportError:
         node = space.encode(
-            experience, tags=tag_list, source=source,
-            context_hint=context_hint, timestamp=event_timestamp,
+            experience,
+            tags=tag_list,
+            source=source,
+            context_hint=context_hint,
+            timestamp=event_timestamp,
         )
     node.occurred_at = occurred_float
 
@@ -258,7 +286,10 @@ def im_enc(
     }
     if related_intentions:
         result["pending_intentions_hint"] = related_intentions
-        _log(f"im_enc S06: {len(related_intentions)} related intention(s) detected for node {node.id[:8]}")
+        _log(
+            f"im_enc S06: {len(related_intentions)} related intention(s) "
+            f"detected for node {node.id[:8]}"
+        )
 
     # Camada B — resolves_intent: auto-fulfill linked intention
     if resolves_intent:
@@ -276,16 +307,21 @@ def im_enc(
                     idata["fulfilled_by"] = node.id
                     idata["fulfilled_at"] = _time_module.time()
                     intent_node.seed = json.dumps(idata, ensure_ascii=False)
-                    intent_node.summary_orbital = intent_node.summary_orbital.replace("[INTENT:", "[DONE:")
+                    intent_node.summary_orbital = intent_node.summary_orbital.replace(
+                        "[INTENT:", "[DONE:"
+                    )
                     space.backend.put_node("episodic", intent_node)
                     result["intent_resolved"] = resolves_intent
-                    _log(f"im_enc Camada-B: intent {resolves_intent} auto-fulfilled by {node.id[:8]}")
+                    _log(
+                        f"im_enc Camada-B: intent {resolves_intent} auto-fulfilled by {node.id[:8]}"
+                    )
         except Exception as _e:
             _log(f"im_enc Camada-B WARN: {_e}")
 
     # FCM federation — emite evento após encode (SecureFCMBridge: dedup + TriggerDetector)
     try:
         from imi.integrations.fcm_security import SecureFCMBridge as _FCMBridge
+
         _fcm = _FCMBridge(min_importance=2)
         _fcm.emit_encode(node)
     except Exception:
@@ -314,17 +350,21 @@ def im_complete(fragment: str, threshold: float = 0.0) -> str:
     if node is None:
         return json.dumps({"found": False, "fragment": fragment}, ensure_ascii=False)
 
-    return json.dumps({
-        "found": True,
-        "id": node.id,
-        "seed": node.seed,
-        "summary": node.summary_medium,
-        "tags": node.tags,
-        "affect": {
-            "salience": node.affect.salience if node.affect else 0,
-            "valence": node.affect.valence if node.affect else 0,
+    return json.dumps(
+        {
+            "found": True,
+            "id": node.id,
+            "seed": node.seed,
+            "summary": node.summary_medium,
+            "tags": node.tags,
+            "affect": {
+                "salience": node.affect.salience if node.affect else 0,
+                "valence": node.affect.valence if node.affect else 0,
+            },
         },
-    }, ensure_ascii=False, indent=2)
+        ensure_ascii=False,
+        indent=2,
+    )
 
 
 def _mw_score_from_node(node) -> float:
@@ -332,7 +372,7 @@ def _mw_score_from_node(node) -> float:
     H2: reads from mw_data first (new schema), falls back to seed (legacy).
     """
     # New schema: mw_data dict
-    if hasattr(node, 'mw_data') and node.mw_data and "mw_score" in node.mw_data:
+    if hasattr(node, "mw_data") and node.mw_data and "mw_score" in node.mw_data:
         return float(node.mw_data["mw_score"])
     # Legacy: mw_score in seed JSON
     try:
@@ -351,10 +391,7 @@ def _affordance_max_confidence(node) -> float:
         affs = node.affordances or []
         if not affs:
             return 0.5
-        return max(
-            (float(a.confidence) if hasattr(a, "confidence") else 0.5)
-            for a in affs
-        )
+        return max((float(a.confidence) if hasattr(a, "confidence") else 0.5) for a in affs)
     except Exception:
         return 0.5
 
@@ -382,8 +419,12 @@ def im_nav(
     rw = None if relevance_weight < 0 else relevance_weight
 
     nav = space.navigate(
-        query, zoom=zoom, top_k=top_k if mode == "semantic" else top_k * 3,
-        context=context, relevance_weight=rw, positional_optimize=positional_optimize,
+        query,
+        zoom=zoom,
+        top_k=top_k if mode == "semantic" else top_k * 3,
+        context=context,
+        relevance_weight=rw,
+        positional_optimize=positional_optimize,
     )
 
     rw_used, intent_obj = space.adaptive_rw.classify_with_info(query)
@@ -411,10 +452,16 @@ def im_nav(
 
     memories = []
     for m in final_memories:
-        mem = {"score": round(m["score"], 3), "content": m["content"],
-               "id": m.get("id", ""), "tags": m.get("tags", [])}
-        if m.get("affordances"): mem["affordances"] = m["affordances"][:2]
-        if m.get("affect_str"): mem["affect"] = m["affect_str"]
+        mem = {
+            "score": round(m["score"], 3),
+            "content": m["content"],
+            "id": m.get("id", ""),
+            "tags": m.get("tags", []),
+        }
+        if m.get("affordances"):
+            mem["affordances"] = m["affordances"][:2]
+        if m.get("affect_str"):
+            mem["affect"] = m["affect_str"]
         if mode == "utility":
             node = space.episodic.get(m.get("id", "")) or space.semantic.get(m.get("id", ""))
             mem["mw_score"] = _mw_score_from_node(node) if node else 0.5
@@ -422,12 +469,16 @@ def im_nav(
 
     elapsed_ms = (_time_module.monotonic() - t0) * 1000
     _record_latency(elapsed_ms)
-    _log(f"im_nav '{query[:40]}' — {elapsed_ms:.1f}ms | hits={len(memories)} zoom={zoom} mode={mode}")
+    _log(
+        f"im_nav '{query[:40]}' — {elapsed_ms:.1f}ms | hits={len(memories)} zoom={zoom} mode={mode}"
+    )
 
     result = {
-        "query": query, "intent": intent_obj.name,
+        "query": query,
+        "intent": intent_obj.name,
         "relevance_weight_used": round(rw_used if rw is None else rw, 3),
-        "zoom": zoom, "hits": len(memories),
+        "zoom": zoom,
+        "hits": len(memories),
         "retrieval_mode": mode,
         "memories": memories,
         "_perf_ms": round(elapsed_ms, 1),
@@ -445,7 +496,9 @@ def im_drm() -> str:
         "clusters_formed": report.clusters_formed,
         "patterns_extracted": report.patterns_extracted,
         "convergence": {
-            "energy": round(space.annealing.energy_history[-1], 4) if space.annealing.energy_history else None,
+            "energy": round(space.annealing.energy_history[-1], 4)
+            if space.annealing.energy_history
+            else None,
             "steps": space.annealing.iteration,
             "converged": space.annealing.converged,
         },
@@ -460,11 +513,17 @@ def im_sact(action_query: str, top_k: int = 5) -> str:
     """Find memories by enabled actions (affordance search)"""
     space = _get_space()
     results = space.search_affordances(action_query, top_k=top_k)
-    items = [{
-        "action": r["action"], "confidence": round(r["confidence"], 2),
-        "conditions": r["conditions"], "similarity": round(r["similarity"], 3),
-        "memory_summary": r["memory_summary"][:200], "node_id": r["node_id"],
-    } for r in results]
+    items = [
+        {
+            "action": r["action"],
+            "confidence": round(r["confidence"], 2),
+            "conditions": r["conditions"],
+            "similarity": round(r["similarity"], 3),
+            "memory_summary": r["memory_summary"][:200],
+            "node_id": r["node_id"],
+        }
+        for r in results
+    ]
     return json.dumps({"query": action_query, "results": items}, ensure_ascii=False, indent=2)
 
 
@@ -485,7 +544,9 @@ def im_sts() -> str:
         "annealing": {
             "steps": space.annealing.iteration,
             "converged": space.annealing.converged,
-            "energy": round(space.annealing.energy_history[-1], 4) if space.annealing.energy_history else None,
+            "energy": round(space.annealing.energy_history[-1], 4)
+            if space.annealing.energy_history
+            else None,
         },
         "persist_dir": str(space.persist_dir) if space.persist_dir else None,
         "tiers": space.tier_stats(),
@@ -499,16 +560,28 @@ def im_sts() -> str:
 def im_glnk(source_id: str, target_id: str, edge_type: str = "causal", label: str = "") -> str:
     """Add edge between memories in graph"""
     from imi.graph import EdgeType
+
     space = _get_space()
-    type_map = {"causal": EdgeType.CAUSAL, "co_occurrence": EdgeType.CO_OCCURRENCE, "similar": EdgeType.SIMILAR}
+    type_map = {
+        "causal": EdgeType.CAUSAL,
+        "co_occurrence": EdgeType.CO_OCCURRENCE,
+        "similar": EdgeType.SIMILAR,
+    }
     et = type_map.get(edge_type, EdgeType.CAUSAL)
     space.graph.add_edge(source_id, target_id, et, label=label)
     # H3 fix: save if EITHER persist_dir OR backend is set
-    if space.persist_dir or space.backend: space.save()
-    return json.dumps({
-        "status": "ok", "edge": f"{source_id} --[{edge_type}]--> {target_id}",
-        "label": label, "total_edges": space.graph.stats()["total_edges"],
-    }, ensure_ascii=False, indent=2)
+    if space.persist_dir or space.backend:
+        space.save()
+    return json.dumps(
+        {
+            "status": "ok",
+            "edge": f"{source_id} --[{edge_type}]--> {target_id}",
+            "label": label,
+            "total_edges": space.graph.stats()["total_edges"],
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
 
 
 @mcp.tool()
@@ -523,7 +596,7 @@ def im_int(
 ) -> str:
     """Store pending intention with deadline and context"""
     import uuid as _uuid
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     space = _get_space()
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
@@ -569,11 +642,18 @@ def im_int(
 
     _log(f"im_int created: {node_id} | project={project} deadline={deadline}")
 
-    return json.dumps({
-        "id": node_id, "content": content,
-        "project": project, "deadline": deadline,
-        "status": "pending", "tags": tag_list,
-    }, ensure_ascii=False, indent=2)
+    return json.dumps(
+        {
+            "id": node_id,
+            "content": content,
+            "project": project,
+            "deadline": deadline,
+            "status": "pending",
+            "tags": tag_list,
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
 
 
 def _intention_to_node(data: dict):
@@ -582,17 +662,20 @@ def _intention_to_node(data: dict):
     O JSON completo fica em `content` para recuperação fiel via im_int_list.
     summary_orbital = preview legível (node_type como prefixo para filtragem).
     """
-    from imi.node import MemoryNode
     from imi.affect import AffectiveTag
+    from imi.node import MemoryNode
+
     # AffectiveTag: salience + valence + arousal (fade_resist é property calculada)
     # arousal=0.8 → fade_resistance = salience*(0.3+0.7*emotional_intensity) ≈ 0.85*0.86 ≈ 0.73
     affect = AffectiveTag(salience=data.get("salience", 0.85), valence=0.5, arousal=0.8)
     return MemoryNode(
         id=data["id"],
-        seed=json.dumps(data, ensure_ascii=False),       # JSON completo em seed para recuperação
-        original=data["content"],                        # texto legível em original
+        seed=json.dumps(data, ensure_ascii=False),  # JSON completo em seed para recuperação
+        original=data["content"],  # texto legível em original
         summary_medium=data.get("summary_medium", data["content"][:200]),
-        summary_orbital=data.get("summary_orbital", f"[INTENT:{data.get('project','')}] {data['content'][:80]}"),
+        summary_orbital=data.get(
+            "summary_orbital", f"[INTENT:{data.get('project', '')}] {data['content'][:80]}"
+        ),
         tags=data.get("tags", []),
         source=data.get("source", "im_int"),
         created_at=data.get("created_at", _time_module.time()),
@@ -656,10 +739,16 @@ def im_int_fulfill(
 
     _log(f"im_int_fulfill: {intent_id} → fulfilled | by={fulfilled_by} edge={edge_created}")
 
-    return json.dumps({
-        "status": "fulfilled", "intent_id": intent_id,
-        "fulfilled_by": fulfilled_by, "edge_created": edge_created,
-    }, ensure_ascii=False, indent=2)
+    return json.dumps(
+        {
+            "status": "fulfilled",
+            "intent_id": intent_id,
+            "fulfilled_by": fulfilled_by,
+            "edge_created": edge_created,
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
 
 
 @mcp.tool()
@@ -675,7 +764,9 @@ def im_int_list(
     for node in space.episodic.nodes:
         # Intenções são identificadas pelo prefixo [INTENT: no summary_orbital
         # ou pelo node_type no JSON de content
-        if not (node.summary_orbital.startswith("[INTENT:") or node.summary_orbital.startswith("[DONE:")):
+        if not (
+            node.summary_orbital.startswith("[INTENT:") or node.summary_orbital.startswith("[DONE:")
+        ):
             continue
         try:
             data = json.loads(node.seed)
@@ -687,18 +778,20 @@ def im_int_list(
             continue
         if project and data.get("project", "").upper() != project.upper():
             continue
-        intentions.append({
-            "id": node.id,
-            "content": data.get("content", ""),
-            "context": data.get("context", ""),
-            "project": data.get("project", ""),
-            "deadline": data.get("deadline", ""),
-            "deadline_ts": data.get("deadline_ts"),
-            "status": data.get("status", "pending"),
-            "confidence": data.get("confidence", 0.85),
-            "tags": node.tags,
-            "created_at": node.created_at,
-        })
+        intentions.append(
+            {
+                "id": node.id,
+                "content": data.get("content", ""),
+                "context": data.get("context", ""),
+                "project": data.get("project", ""),
+                "deadline": data.get("deadline", ""),
+                "deadline_ts": data.get("deadline_ts"),
+                "status": data.get("status", "pending"),
+                "confidence": data.get("confidence", 0.85),
+                "tags": node.tags,
+                "created_at": node.created_at,
+            }
+        )
 
     # Ordenar: deadline ASC (None vai para o fim), depois salience DESC
     def sort_key(i):
@@ -710,11 +803,17 @@ def im_int_list(
 
     _log(f"im_int_list: {len(items)} intentions | project={project} status={status}")
 
-    return json.dumps({
-        "total": len(intentions), "filtered": len(items),
-        "status": status, "project": project,
-        "intentions": items,
-    }, ensure_ascii=False, indent=2)
+    return json.dumps(
+        {
+            "total": len(intentions),
+            "filtered": len(items),
+            "status": status,
+            "project": project,
+            "intentions": items,
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
 
 
 @mcp.tool()
@@ -747,9 +846,13 @@ def im_feedback(
     """
     outcome = outcome.strip().lower()
     if outcome not in ("positive", "negative", "neutral"):
-        return json.dumps({
-            "error": f"outcome deve ser 'positive', 'negative' ou 'neutral' — recebido: '{outcome}'"
-        })
+        return json.dumps(
+            {
+                "error": (
+                    f"outcome deve ser 'positive', 'negative' ou 'neutral' — recebido: '{outcome}'"
+                )
+            }
+        )
 
     if not node_ids:
         return json.dumps({"error": "node_ids não pode ser vazio"})
@@ -770,6 +873,7 @@ def im_feedback(
 
         if node.affect is None:
             from imi.affect import AffectiveTag
+
             node.affect = AffectiveTag()
 
         if outcome == "positive":
@@ -790,14 +894,16 @@ def im_feedback(
         if hasattr(space, "mark_node_dirty"):
             space.mark_node_dirty(node)
 
-        updated.append({
-            "id": node_id,
-            "salience_before": round(old_salience, 3),
-            "salience_after": round(node.affect.salience, 3),
-            "valence_before": round(old_valence, 3),
-            "valence_after": round(node.affect.valence, 3),
-            "access_count": node.access_count,
-        })
+        updated.append(
+            {
+                "id": node_id,
+                "salience_before": round(old_salience, 3),
+                "salience_after": round(node.affect.salience, 3),
+                "valence_before": round(old_valence, 3),
+                "valence_after": round(node.affect.valence, 3),
+                "access_count": node.access_count,
+            }
+        )
 
     # Persistir mudanças
     if updated:
@@ -808,14 +914,18 @@ def im_feedback(
         f"updated={len(updated)} not_found={len(not_found)}"
     )
 
-    return json.dumps({
-        "outcome": outcome,
-        "magnitude": magnitude,
-        "context": context[:200] if context else "",
-        "updated": updated,
-        "not_found": not_found,
-        "saved": bool(updated),
-    }, ensure_ascii=False, indent=2)
+    return json.dumps(
+        {
+            "outcome": outcome,
+            "magnitude": magnitude,
+            "context": context[:200] if context else "",
+            "updated": updated,
+            "not_found": not_found,
+            "saved": bool(updated),
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
 
 
 @mcp.tool()
@@ -841,7 +951,9 @@ def im_mw_update(
     """
     outcome = outcome.strip().lower()
     if outcome not in ("success", "failure"):
-        return json.dumps({"error": f"outcome deve ser 'success' ou 'failure', recebido: '{outcome}'"})
+        return json.dumps(
+            {"error": f"outcome deve ser 'success' ou 'failure', recebido: '{outcome}'"}
+        )
 
     space = _get_space()
     updated: dict[str, float] = {}
@@ -881,7 +993,9 @@ def im_mw_update(
                     node.mw_data = {k: v for k, v in seed_data.items() if k.startswith("mw_")}
                     # Clean MW keys from seed to prevent future confusion
                     clean_seed = {k: v for k, v in seed_data.items() if not k.startswith("mw_")}
-                    node.seed = json.dumps(clean_seed, ensure_ascii=False) if clean_seed else node.seed
+                    node.seed = (
+                        json.dumps(clean_seed, ensure_ascii=False) if clean_seed else node.seed
+                    )
                 else:
                     node.mw_data = {}
             except Exception:
@@ -906,15 +1020,22 @@ def im_mw_update(
         for store_name, node in modified_nodes:
             space.backend.put_node(store_name, node)
 
-    _log(f"im_mw_update outcome={outcome} | updated={len(updated)} not_found={len(not_found)} session={session_id}")
+    _log(
+        f"im_mw_update outcome={outcome} | updated={len(updated)} "
+        f"not_found={len(not_found)} session={session_id}"
+    )
 
-    return json.dumps({
-        "outcome": outcome,
-        "updated": len(updated),
-        "mw_scores": updated,
-        "not_found": not_found,
-        "session_id": session_id,
-    }, ensure_ascii=False, indent=2)
+    return json.dumps(
+        {
+            "outcome": outcome,
+            "updated": len(updated),
+            "mw_scores": updated,
+            "not_found": not_found,
+            "session_id": session_id,
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
 
 
 @mcp.tool()
@@ -927,7 +1048,7 @@ def im_perf() -> str:
 
     # Phase 5 monitoring: DB health metrics
     db_health = {}
-    if space_ok and space.backend and hasattr(space.backend, '_get_conn'):
+    if space_ok and space.backend and hasattr(space.backend, "_get_conn"):
         try:
             conn = space.backend._get_conn()
             # Versions per node (C1 indicator)
@@ -945,6 +1066,7 @@ def im_perf() -> str:
             # DB file size
             try:
                 import os as _os
+
                 db_path = space.backend.db_path
                 db_health["db_size_mb"] = round(_os.path.getsize(db_path) / (1024 * 1024), 1)
             except Exception:
@@ -952,7 +1074,9 @@ def im_perf() -> str:
             # Total rows
             total_row = conn.execute("SELECT count(*) FROM memory_nodes").fetchone()
             db_health["total_rows"] = total_row[0] if total_row else 0
-            distinct_row = conn.execute("SELECT count(DISTINCT node_id) FROM memory_nodes").fetchone()
+            distinct_row = conn.execute(
+                "SELECT count(DISTINCT node_id) FROM memory_nodes"
+            ).fetchone()
             db_health["distinct_nodes"] = distinct_row[0] if distinct_row else 0
         except Exception as e:
             db_health["error"] = str(e)
@@ -982,12 +1106,14 @@ def im_perf() -> str:
 
 # --- Entry point ---
 
+
 def main():
     transport = os.environ.get("IMI_TRANSPORT", "stdio")
     if "--transport" in sys.argv:
         idx = sys.argv.index("--transport")
         transport = sys.argv[idx + 1]
     mcp.run(transport=transport)
+
 
 if __name__ == "__main__":
     main()

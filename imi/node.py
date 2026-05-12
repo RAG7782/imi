@@ -37,10 +37,10 @@ class MemoryNode:
     access_count: int = 0
 
     # Zoom levels — pre-computed text at different resolutions
-    summary_orbital: str = ""   # ~10 tokens: the theme
-    summary_medium: str = ""    # ~40 tokens: theme + key facts
+    summary_orbital: str = ""  # ~10 tokens: the theme
+    summary_medium: str = ""  # ~40 tokens: theme + key facts
     summary_detailed: str = ""  # ~100 tokens: technical summary
-    seed: str = ""              # ~80 tokens: full reconstruction key
+    seed: str = ""  # ~80 tokens: full reconstruction key
 
     # Original experience (persisted; encrypted at-rest when IMI_CRYPTO=1)
     original: str | None = None
@@ -49,10 +49,10 @@ class MemoryNode:
     embedding: np.ndarray | None = field(default=None, repr=False)
 
     # --- v3: Predictive coding ---
-    surprise_summary: str = ""         # what was unexpected
-    surprise_magnitude: float = 0.0    # 0-1 how surprising
+    surprise_summary: str = ""  # what was unexpected
+    surprise_magnitude: float = 0.0  # 0-1 how surprising
     surprise_elements: list[str] = field(default_factory=list)
-    prediction: str = ""               # what was predicted (for reconstruction)
+    prediction: str = ""  # what was predicted (for reconstruction)
 
     # --- v3: Affect ---
     affect: AffectiveTag = field(default_factory=AffectiveTag)
@@ -88,8 +88,8 @@ class MemoryNode:
     mw_data: dict | None = None
 
     # SDE-AAAK Dialect (metadata layer)
-    sde_tag: str = ""       # Rendered SDE-AAAK tag string
-    ds_d: float = 0.0       # Distributional semiotic density score (0-1)
+    sde_tag: str = ""  # Rendered SDE-AAAK tag string
+    ds_d: float = 0.0  # Distributional semiotic density score (0-1)
     entities: list[str] = field(default_factory=list)  # 3-letter entity codes
 
     @property

@@ -4,7 +4,7 @@ v3 (100/100): Predictive coding + CLS + Temporal + Affect +
 Affordances + Reconsolidation + TDA + Annealing.
 """
 
-from imi.core import remember, compress_seed
+from imi.core import compress_seed, remember
 from imi.node import MemoryNode
 from imi.space import IMISpace, Zoom
 

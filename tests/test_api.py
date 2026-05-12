@@ -1,16 +1,16 @@
 """Tests for the FastAPI REST API."""
 
-import json
 import pytest
 from fastapi.testclient import TestClient
 
-from imi.api import app, _get_space
+from imi.api import app
 
 
 @pytest.fixture(autouse=True)
 def reset_space(tmp_path, monkeypatch):
     """Reset global space and use temp db before each test."""
     import imi.api
+
     imi.api._space = None
     monkeypatch.setenv("IMI_DB", str(tmp_path / "test.db"))
     yield
@@ -40,11 +40,14 @@ class TestStats:
 
 class TestEncode:
     def test_encode_basic(self, client):
-        r = client.post("/encode", json={
-            "experience": "DNS failure at 03:00 caused auth cascade",
-            "tags": ["dns", "auth"],
-            "source": "test",
-        })
+        r = client.post(
+            "/encode",
+            json={
+                "experience": "DNS failure at 03:00 caused auth cascade",
+                "tags": ["dns", "auth"],
+                "source": "test",
+            },
+        )
         assert r.status_code == 200
         data = r.json()
         assert data["id"]
@@ -103,11 +106,14 @@ class TestGraphLink:
         id1 = r1.json()["id"]
         id2 = r2.json()["id"]
 
-        r = client.post("/graph/link", json={
-            "source_id": id1,
-            "target_id": id2,
-            "edge_type": "causal",
-            "label": "caused",
-        })
+        r = client.post(
+            "/graph/link",
+            json={
+                "source_id": id1,
+                "target_id": id2,
+                "edge_type": "causal",
+                "label": "caused",
+            },
+        )
         assert r.status_code == 200
         assert r.json()["total_edges"] >= 1

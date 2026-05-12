@@ -1,19 +1,19 @@
 """Tests for SDE-AAAK Hybrid Dialect."""
-import pytest
+
 import numpy as np
+import pytest
 
 from imi.dialect import (
-    extract_entities,
+    SDETag,
     compute_ds_d,
+    densify_prompt,
     detect_flags,
+    extract_entities,
     format_tag,
     parse_tag,
-    densify_prompt,
-    SDETag,
 )
-from imi.node import MemoryNode, AffectiveTag
-from imi.affordance import Affordance
 from imi.embedder import SentenceTransformerEmbedder
+from imi.node import AffectiveTag, MemoryNode
 
 
 def _make_node(
@@ -42,6 +42,7 @@ def _make_node(
 
 # ── Entity Extraction ─────────────────────────────────
 
+
 class TestExtractEntities:
     def test_known_entities(self):
         entities = extract_entities("The IMI system connects to ClawVault via FCM bus")
@@ -52,7 +53,6 @@ class TestExtractEntities:
     def test_capitalized_entities(self):
         entities = extract_entities("The Topology Engine optimizes Mycelium channels")
         # Should extract multi-word capitalized phrases or their 3-letter codes
-        entity_str = " ".join(entities)
         assert len(entities) > 0  # Should find at least one entity
 
     def test_max_entities(self):
@@ -71,13 +71,16 @@ class TestExtractEntities:
 
 # ── DS-d Scoring ──────────────────────────────────────
 
+
 class TestComputeDsD:
     @pytest.fixture(scope="class")
     def embedder(self):
         return SentenceTransformerEmbedder()
 
     def test_returns_float_in_range(self, embedder):
-        score = compute_ds_d("The authentication service crashed due to certificate expiry", embedder)
+        score = compute_ds_d(
+            "The authentication service crashed due to certificate expiry", embedder
+        )
         assert 0.0 <= score <= 1.0
 
     def test_dense_text_higher_than_generic(self, embedder):
@@ -105,6 +108,7 @@ class TestComputeDsD:
 
 
 # ── Flags Detection ───────────────────────────────────
+
 
 class TestDetectFlags:
     def test_core_flag(self):
@@ -135,6 +139,7 @@ class TestDetectFlags:
 
 
 # ── Tag Format / Parse ────────────────────────────────
+
 
 class TestSDETag:
     def test_render_basic(self):
@@ -215,6 +220,7 @@ class TestFormatTag:
 
 
 # ── Densify Prompt ────────────────────────────────────
+
 
 class TestDensifyPrompt:
     def test_without_domain(self):

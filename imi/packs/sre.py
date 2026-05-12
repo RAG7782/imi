@@ -17,8 +17,10 @@ Usage:
 from __future__ import annotations
 
 import random
-from pathlib import Path
+from typing import TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from imi.space import IMISpace
 
 # ---------------------------------------------------------------------------
 # Incident generator (extended from AMBench with more variety)
@@ -138,24 +140,46 @@ TEMPLATES = {
 }
 
 SERVICES = [
-    "api-gateway", "user-service", "payment-service", "order-service",
-    "inventory-service", "notification-service", "analytics-service",
-    "auth-service", "search-service", "cdn-edge", "billing-service",
-    "recommendation-engine", "data-pipeline", "scheduler-service",
+    "api-gateway",
+    "user-service",
+    "payment-service",
+    "order-service",
+    "inventory-service",
+    "notification-service",
+    "analytics-service",
+    "auth-service",
+    "search-service",
+    "cdn-edge",
+    "billing-service",
+    "recommendation-engine",
+    "data-pipeline",
+    "scheduler-service",
     "config-service",
 ]
 
 TRIGGERS = [
-    "Black Friday traffic", "batch job spike", "DDoS attempt",
-    "marketing campaign launch", "data migration", "partner API burst",
-    "end-of-month reconciliation", "automated security scan",
-    "load test runaway", "cron job overlap",
+    "Black Friday traffic",
+    "batch job spike",
+    "DDoS attempt",
+    "marketing campaign launch",
+    "data migration",
+    "partner API burst",
+    "end-of-month reconciliation",
+    "automated security scan",
+    "load test runaway",
+    "cron job overlap",
 ]
 
 COMPONENTS = [
-    "request handler", "cache layer", "session store",
-    "message queue consumer", "background worker", "gRPC server",
-    "connection pool manager", "rate limiter", "health check endpoint",
+    "request handler",
+    "cache layer",
+    "session store",
+    "message queue consumer",
+    "background worker",
+    "gRPC server",
+    "connection pool manager",
+    "rate limiter",
+    "health check endpoint",
 ]
 
 DOMAINS = ["api.example.com", "auth.internal", "payments.prod", "data.analytics.io"]
@@ -223,15 +247,17 @@ def _generate_sre_incidents(n: int = 500, days: int = 180, seed: int = 42) -> li
         day = int(i / n * days)
         severity = rng.choices(SEVERITIES, weights=sev_dist, k=1)[0]
 
-        incidents.append({
-            "id": f"sre_{i:04d}",
-            "text": text,
-            "pattern_type": pattern,
-            "day": day,
-            "severity": severity,
-            "runbook": TEMPLATES[pattern]["runbook"],
-            "tags": [pattern, severity, params.get("service", "")],
-        })
+        incidents.append(
+            {
+                "id": f"sre_{i:04d}",
+                "text": text,
+                "pattern_type": pattern,
+                "day": day,
+                "severity": severity,
+                "runbook": TEMPLATES[pattern]["runbook"],
+                "tags": [pattern, severity, params.get("service", "")],
+            }
+        )
 
     return incidents
 
@@ -252,7 +278,6 @@ def load_sre_pack(db_path: str = "sre_memory.db", n: int | None = None) -> "IMIS
     """
     from imi.space import IMISpace
 
-    persist_dir = Path(db_path).with_suffix("")
     space = IMISpace.from_sqlite(db_path)
 
     # Skip if already loaded

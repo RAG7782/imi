@@ -33,11 +33,12 @@ from pathlib import Path
 # ── Config ────────────────────────────────────────────────────────────────────
 
 HOME = Path.home()
-DB   = HOME / "experimentos/tools/imi/imi_memory.db"
+DB = HOME / "experimentos/tools/imi/imi_memory.db"
 PORT = 7891
 HOST = "127.0.0.1"
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
+
 
 def _conn() -> sqlite3.Connection:
     c = sqlite3.connect(str(DB), timeout=5.0)
@@ -51,7 +52,7 @@ def _parse_node(row: sqlite3.Row) -> dict:
     except Exception:
         data = {}
     return {
-        "node_id":    row["node_id"],
+        "node_id": row["node_id"],
         "store_name": row["store_name"],
         "is_deleted": row["is_deleted"],
         "created_at": row["created_at"],
@@ -76,14 +77,17 @@ def _fmt_ts(ts) -> str:
 
 
 def _sal_class(s: float) -> str:
-    if s >= 0.6:  return "high"
-    if s >= 0.45: return "mid"
+    if s >= 0.6:
+        return "high"
+    if s >= 0.45:
+        return "mid"
     return "low"
 
 
 def _e(s) -> str:
     """HTML-escape a value."""
     return html_mod.escape(str(s) if s is not None else "")
+
 
 # ── HTML components ───────────────────────────────────────────────────────────
 
@@ -114,7 +118,8 @@ a:hover { text-decoration: underline; }
 .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px;
         padding: 12px 14px; }
 .card:hover { border-color: #58a6ff; }
-.meta { font-size: 11px; color: #8b949e; display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.meta { font-size: 11px; color: #8b949e; display: flex; gap: 8px;
+        flex-wrap: wrap; margin-bottom: 4px; }
 .orbital { font-size: 14px; color: #f0f6fc; font-weight: 500; }
 .medium  { font-size: 12px; color: #8b949e; margin-top: 3px; }
 .tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
@@ -168,28 +173,40 @@ def page_wrap(title: str, body: str, total: int) -> str:
 
 # ── Page builders ─────────────────────────────────────────────────────────────
 
+
 def build_index(qs: dict) -> str:
-    page   = max(1, int(qs.get("page", ["1"])[0]))
-    store  = qs.get("store", [""])[0]
+    page = max(1, int(qs.get("page", ["1"])[0]))
+    store = qs.get("store", [""])[0]
     source = qs.get("source", [""])[0]
-    per    = 30
+    per = 30
     offset = (page - 1) * per
 
     where, params = ["is_deleted=0"], []
     if store:
-        where.append("store_name=?"); params.append(store)
+        where.append("store_name=?")
+        params.append(store)
     if source:
-        where.append("json_extract(data,'$.source')=?"); params.append(source)
+        where.append("json_extract(data,'$.source')=?")
+        params.append(source)
     wh = " AND ".join(where)
 
     total = _total()
     with _conn() as c:
-        rows   = c.execute(f"SELECT * FROM memory_nodes WHERE {wh} ORDER BY inserted_at DESC LIMIT ? OFFSET ?",
-                           params + [per, offset]).fetchall()
-        stores  = [r[0] for r in c.execute("SELECT DISTINCT store_name FROM memory_nodes WHERE is_deleted=0")]
-        sources = [r[0] for r in c.execute(
-            "SELECT DISTINCT json_extract(data,'$.source') FROM memory_nodes WHERE is_deleted=0"
-        ) if r[0]]
+        rows = c.execute(
+            f"SELECT * FROM memory_nodes WHERE {wh} ORDER BY inserted_at DESC LIMIT ? OFFSET ?",
+            params + [per, offset],
+        ).fetchall()
+        stores = [
+            r[0]
+            for r in c.execute("SELECT DISTINCT store_name FROM memory_nodes WHERE is_deleted=0")
+        ]
+        sources = [
+            r[0]
+            for r in c.execute(
+                "SELECT DISTINCT json_extract(data,'$.source') FROM memory_nodes WHERE is_deleted=0"
+            )
+            if r[0]
+        ]
 
     nodes = [_parse_node(r) for r in rows]
     pages = max(1, (total + per - 1) // per)
@@ -200,23 +217,36 @@ def build_index(qs: dict) -> str:
         return "?" + "&".join(f"{k}={urllib.parse.quote(str(v))}" for k, v in d.items() if v)
 
     # Filters
-    store_f = f'<a href="{qs_with(page=1,store="")}" class="fb {"on" if not store else ""}">Todos</a>' + \
-              "".join(f'<a href="{qs_with(page=1,store=s)}" class="fb {"on" if store==s else ""}">{_e(s)}</a>' for s in stores)
-    src_f   = f'<a href="{qs_with(page=1,source="")}" class="fb {"on" if not source else ""}">Todos</a>' + \
-              "".join(f'<a href="{qs_with(page=1,source=s)}" class="fb {"on" if source==s else ""}">{_e(s.replace("hook:",""))}</a>' for s in sources)
+    store_f = (
+        f'<a href="{qs_with(page=1, store="")}" class="fb {"on" if not store else ""}">Todos</a>'
+        + "".join(
+            f'<a href="{qs_with(page=1, store=s)}" '
+            f'class="fb {"on" if store == s else ""}">{_e(s)}</a>'
+            for s in stores
+        )
+    )
+    src_f = (
+        f'<a href="{qs_with(page=1, source="")}" class="fb {"on" if not source else ""}">Todos</a>'
+        + "".join(
+            f'<a href="{qs_with(page=1, source=s)}" '
+            f'class="fb {"on" if source == s else ""}">'
+            f"{_e(s.replace('hook:', ''))}</a>"
+            for s in sources
+        )
+    )
 
     # Cards
     cards = ""
     for n in nodes:
-        sal  = float((n.get("affect") or {}).get("salience", 0))
-        sc   = _sal_class(sal)
+        sal = float((n.get("affect") or {}).get("salience", 0))
+        sc = _sal_class(sal)
         tier = n.get("tier") or "—"
-        orb  = _e(n.get("summary_orbital") or str(n.get("seed",""))[:80] or "(sem orbital)")
-        med  = _e((n.get("summary_medium") or "")[:110])
+        orb = _e(n.get("summary_orbital") or str(n.get("seed", ""))[:80] or "(sem orbital)")
+        med = _e((n.get("summary_medium") or "")[:110])
         tags = n.get("tags") or []
         ents = n.get("entities") or []
-        src  = _e(n.get("source","—"))
-        ts   = _fmt_ts(n.get("created_at"))
+        src = _e(n.get("source", "—"))
+        ts = _fmt_ts(n.get("created_at"))
         tag_html = "".join(f'<span class="tag">{_e(t)}</span>' for t in tags[:5])
         ent_html = "".join(f'<span class="etag">{_e(e)}</span>' for e in ents[:4])
         cards += f"""<div class="card">
@@ -225,8 +255,8 @@ def build_index(qs: dict) -> str:
             <span class="tier-pill">{_e(str(tier))}</span>
             <span>{src}</span><span>{ts}</span>
           </div>
-          <div class="orbital"><a href="/node/{_e(n['node_id'])}">{orb}</a></div>
-          {'<div class="medium">' + med + '</div>' if med else ''}
+          <div class="orbital"><a href="/node/{_e(n["node_id"])}">{orb}</a></div>
+          {'<div class="medium">' + med + "</div>" if med else ""}
           <div class="tags">{ent_html}{tag_html}</div>
         </div>"""
 
@@ -235,10 +265,10 @@ def build_index(qs: dict) -> str:
 
     pag = '<div class="pag">'
     if page > 1:
-        pag += f'<a href="{qs_with(page=page-1)}">← Anterior</a>'
+        pag += f'<a href="{qs_with(page=page - 1)}">← Anterior</a>'
     pag += f'<span style="color:#8b949e">Pág {page}/{pages}</span>'
     if page < pages:
-        pag += f'<a href="{qs_with(page=page+1)}">Próxima →</a>'
+        pag += f'<a href="{qs_with(page=page + 1)}">Próxima →</a>'
     pag += "</div>"
 
     body = f"""
@@ -255,11 +285,13 @@ def build_detail(node_id: str) -> str:
     with _conn() as c:
         row = c.execute("SELECT * FROM memory_nodes WHERE node_id=?", (node_id,)).fetchone()
     if not row:
-        return page_wrap("IMI — não encontrado", f"<p>Nó {_e(node_id)} não encontrado.</p>", _total())
+        return page_wrap(
+            "IMI — não encontrado", f"<p>Nó {_e(node_id)} não encontrado.</p>", _total()
+        )
 
-    n   = _parse_node(row)
+    n = _parse_node(row)
     sal = float((n.get("affect") or {}).get("salience", 0))
-    sc  = _sal_class(sal)
+    sc = _sal_class(sal)
 
     def dr(label: str, value) -> str:
         if value is None or value == "" or value == []:
@@ -268,21 +300,23 @@ def build_detail(node_id: str) -> str:
             value = json.dumps(value, ensure_ascii=False, indent=2)
         return f"<tr><td>{_e(label)}</td><td><pre>{_e(str(value))}</pre></td></tr>"
 
-    trows = "".join([
-        dr("node_id",   n.get("node_id")),
-        dr("store",     n.get("store_name")),
-        dr("source",    n.get("source")),
-        dr("tier",      n.get("tier")),
-        dr("salience",  f"{sal:.3f} ({sc})"),
-        dr("created",   _fmt_ts(n.get("created_at"))),
-        dr("orbital",   n.get("summary_orbital")),
-        dr("medium",    n.get("summary_medium")),
-        dr("seed",      n.get("seed")),
-        dr("tags",      n.get("tags")),
-        dr("entities",  n.get("entities")),
-        dr("affect",    n.get("affect")),
-        dr("file_path", n.get("file_path")),
-    ])
+    trows = "".join(
+        [
+            dr("node_id", n.get("node_id")),
+            dr("store", n.get("store_name")),
+            dr("source", n.get("source")),
+            dr("tier", n.get("tier")),
+            dr("salience", f"{sal:.3f} ({sc})"),
+            dr("created", _fmt_ts(n.get("created_at"))),
+            dr("orbital", n.get("summary_orbital")),
+            dr("medium", n.get("summary_medium")),
+            dr("seed", n.get("seed")),
+            dr("tags", n.get("tags")),
+            dr("entities", n.get("entities")),
+            dr("affect", n.get("affect")),
+            dr("file_path", n.get("file_path")),
+        ]
+    )
 
     orig = _e(n.get("original") or n.get("seed") or "")
     orig_html = f'<div class="stitle">Conteúdo</div><pre>{orig}</pre>' if orig else ""
@@ -302,7 +336,7 @@ def build_detail(node_id: str) -> str:
 
 
 def build_search(qs: dict) -> str:
-    q     = qs.get("q", [""])[0].strip()
+    q = qs.get("q", [""])[0].strip()
     total = _total()
     nodes: list[dict] = []
 
@@ -324,10 +358,10 @@ def build_search(qs: dict) -> str:
 
     cards = ""
     for n in nodes:
-        sal  = float((n.get("affect") or {}).get("salience", 0))
-        sc   = _sal_class(sal)
-        orb  = _e(n.get("summary_orbital") or str(n.get("seed",""))[:80] or "(sem orbital)")
-        med  = _e((n.get("summary_medium") or "")[:100])
+        sal = float((n.get("affect") or {}).get("salience", 0))
+        sc = _sal_class(sal)
+        orb = _e(n.get("summary_orbital") or str(n.get("seed", ""))[:80] or "(sem orbital)")
+        med = _e((n.get("summary_medium") or "")[:100])
         ents = n.get("entities") or []
         tags = n.get("tags") or []
         ent_html = "".join(f'<span class="etag">{_e(e)}</span>' for e in ents[:3])
@@ -335,11 +369,11 @@ def build_search(qs: dict) -> str:
         cards += f"""<div class="card">
           <div class="meta">
             <span class="pill {sc}">{sal:.2f}</span>
-            <span>{_e(n.get('source','—'))}</span>
-            <span>{_fmt_ts(n.get('created_at'))}</span>
+            <span>{_e(n.get("source", "—"))}</span>
+            <span>{_fmt_ts(n.get("created_at"))}</span>
           </div>
-          <div class="orbital"><a href="/node/{_e(n['node_id'])}">{orb}</a></div>
-          {'<div class="medium">' + med + '</div>' if med else ''}
+          <div class="orbital"><a href="/node/{_e(n["node_id"])}">{orb}</a></div>
+          {'<div class="medium">' + med + "</div>" if med else ""}
           <div class="tags">{ent_html}{tag_html}</div>
         </div>"""
 
@@ -353,7 +387,7 @@ def build_search(qs: dict) -> str:
         <button type="submit">Buscar</button>
       </div>
     </form>
-    {'<div class="stitle">Resultados (' + str(len(nodes)) + ')</div>' if q else ''}
+    {'<div class="stitle">Resultados (' + str(len(nodes)) + ")</div>" if q else ""}
     <div class="cards">{cards}</div>"""
     return page_wrap("IMI — Busca", body, total)
 
@@ -361,12 +395,18 @@ def build_search(qs: dict) -> str:
 def build_stats() -> str:
     total = _total()
     with _conn() as c:
-        by_store  = c.execute("SELECT store_name, COUNT(*) FROM memory_nodes WHERE is_deleted=0 GROUP BY store_name").fetchall()
-        by_source = c.execute(
-            "SELECT json_extract(data,'$.source'), COUNT(*) FROM memory_nodes WHERE is_deleted=0 GROUP BY json_extract(data,'$.source') ORDER BY COUNT(*) DESC"
+        by_store = c.execute(
+            "SELECT store_name, COUNT(*) FROM memory_nodes WHERE is_deleted=0 GROUP BY store_name"
         ).fetchall()
-        by_tier   = c.execute(
-            "SELECT json_extract(data,'$.tier'), COUNT(*) FROM memory_nodes WHERE is_deleted=0 GROUP BY json_extract(data,'$.tier') ORDER BY COUNT(*) DESC"
+        by_source = c.execute(
+            "SELECT json_extract(data,'$.source'), COUNT(*) "
+            "FROM memory_nodes WHERE is_deleted=0 "
+            "GROUP BY json_extract(data,'$.source') ORDER BY COUNT(*) DESC"
+        ).fetchall()
+        by_tier = c.execute(
+            "SELECT json_extract(data,'$.tier'), COUNT(*) "
+            "FROM memory_nodes WHERE is_deleted=0 "
+            "GROUP BY json_extract(data,'$.tier') ORDER BY COUNT(*) DESC"
         ).fetchall()
         recent = c.execute(
             "SELECT COUNT(*) FROM memory_nodes WHERE is_deleted=0 AND inserted_at > ?",
@@ -374,12 +414,24 @@ def build_stats() -> str:
         ).fetchone()[0]
 
     def tbl(rows, headers) -> str:
-        h = "".join(f"<th style='text-align:left;padding:6px 10px;color:#8b949e'>{_e(h)}</th>" for h in headers)
+        h = "".join(
+            f"<th style='text-align:left;padding:6px 10px;color:#8b949e'>{_e(h)}</th>"
+            for h in headers
+        )
         b = "".join(
-            "<tr>" + "".join(f"<td style='padding:6px 10px;border-bottom:1px solid #21262d'>{_e(str(v or '—'))}</td>" for v in r) + "</tr>"
+            "<tr>"
+            + "".join(
+                "<td style='padding:6px 10px;border-bottom:1px solid #21262d'>"
+                f"{_e(str(v or '—'))}</td>"
+                for v in r
+            )
+            + "</tr>"
             for r in rows
         )
-        return f"<table style='width:100%;border-collapse:collapse'><thead><tr>{h}</tr></thead><tbody>{b}</tbody></table>"
+        return (
+            "<table style='width:100%;border-collapse:collapse'>"
+            f"<thead><tr>{h}</tr></thead><tbody>{b}</tbody></table>"
+        )
 
     body = f"""
     <div class="stats-row">
@@ -389,29 +441,42 @@ def build_stats() -> str:
       <div class="sc"><div class="lbl">Sources</div><div class="val">{len(by_source)}</div></div>
     </div>
     <div class="stitle">Por Store</div>
-    <div class="panel">{tbl(by_store, ["Store","Count"])}</div>
+    <div class="panel">{tbl(by_store, ["Store", "Count"])}</div>
     <div class="stitle">Por Source</div>
-    <div class="panel">{tbl(by_source, ["Source","Count"])}</div>
+    <div class="panel">{tbl(by_source, ["Source", "Count"])}</div>
     <div class="stitle">Por Tier</div>
-    <div class="panel">{tbl(by_tier, ["Tier","Count"])}</div>"""
+    <div class="panel">{tbl(by_tier, ["Tier", "Count"])}</div>"""
     return page_wrap("IMI — Stats", body, total)
 
 
 def build_api_stats() -> bytes:
     total = _total()
     with _conn() as c:
-        by_store = dict(c.execute("SELECT store_name, COUNT(*) FROM memory_nodes WHERE is_deleted=0 GROUP BY store_name").fetchall())
-        recent   = c.execute("SELECT COUNT(*) FROM memory_nodes WHERE is_deleted=0 AND inserted_at > ?", (time.time() - 86400,)).fetchone()[0]
-    return json.dumps({"total": total, "by_store": by_store, "last_24h": recent}, ensure_ascii=False).encode()
+        by_store = dict(
+            c.execute(
+                "SELECT store_name, COUNT(*) FROM memory_nodes "
+                "WHERE is_deleted=0 GROUP BY store_name"
+            ).fetchall()
+        )
+        recent = c.execute(
+            "SELECT COUNT(*) FROM memory_nodes WHERE is_deleted=0 AND inserted_at > ?",
+            (time.time() - 86400,),
+        ).fetchone()[0]
+    return json.dumps(
+        {"total": total, "by_store": by_store, "last_24h": recent}, ensure_ascii=False
+    ).encode()
 
 
 # ── HTTP handler ──────────────────────────────────────────────────────────────
+
 
 class IMIHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass  # silencioso — sem logs de request no terminal
 
-    def _send(self, body: str | bytes, ct: str = "text/html; charset=utf-8", status: int = 200) -> None:
+    def _send(
+        self, body: str | bytes, ct: str = "text/html; charset=utf-8", status: int = 200
+    ) -> None:
         if isinstance(body, str):
             body = body.encode("utf-8")
         self.send_response(status)
@@ -422,8 +487,8 @@ class IMIHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
-        qs     = urllib.parse.parse_qs(parsed.query)
-        path   = parsed.path
+        qs = urllib.parse.parse_qs(parsed.query)
+        path = parsed.path
 
         try:
             if path == "/":
@@ -444,7 +509,7 @@ class IMIHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urllib.parse.urlparse(self.path)
-        path   = parsed.path
+        path = parsed.path
 
         if path.startswith("/node/") and path.endswith("/delete"):
             node_id = path.split("/node/")[1].rstrip("/delete").strip("/")
@@ -466,6 +531,7 @@ class IMIHandler(BaseHTTPRequestHandler):
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+
 def main() -> None:
     if not DB.exists():
         print(f"[IMI Viewer] ERRO: banco não encontrado em {DB}")
@@ -475,7 +541,7 @@ def main() -> None:
     total = _total()
     print(f"[IMI Viewer] {total} memórias no banco")
     print(f"[IMI Viewer] Abrindo http://{HOST}:{PORT}")
-    print(f"[IMI Viewer] Ctrl+C para parar\n")
+    print("[IMI Viewer] Ctrl+C para parar\n")
 
     server = HTTPServer((HOST, PORT), IMIHandler)
     try:

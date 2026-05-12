@@ -11,7 +11,6 @@ import pytest
 
 from imi.positional import positional_reorder
 
-
 # ── Unit tests for the reorder algorithm ──────────────────────────────────
 
 
@@ -96,7 +95,7 @@ class TestPositionalReorder:
 
 @pytest.mark.skipif(
     not os.environ.get("ANTHROPIC_API_KEY"),
-    reason="Integration tests require ANTHROPIC_API_KEY (LLM calls for encode)"
+    reason="Integration tests require ANTHROPIC_API_KEY (LLM calls for encode)",
 )
 class TestNavigatePositionalIntegration:
     """Test that navigate actually applies positional reordering."""
@@ -107,6 +106,7 @@ class TestNavigatePositionalIntegration:
 
     def _make_space(self, tmp_path):
         from imi.space import IMISpace
+
         return IMISpace.from_sqlite(str(tmp_path / "test_pos.db"))
 
     def test_navigate_positional_default_on(self, tmp_path):

@@ -29,10 +29,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from pathlib import Path
 from typing import Any
-
-import numpy as np
 
 from imi.node import MemoryNode
 from imi.space import IMISpace, NavigationResult
@@ -48,6 +45,7 @@ class TrustLevel(float, Enum):
 @dataclass
 class AgentView:
     """An agent's view into the shared memory pool."""
+
     agent_id: str
     space: IMISpace
     trust_map: dict[str, TrustLevel] = field(default_factory=dict)
@@ -157,16 +155,16 @@ class SharedMemoryPool:
     def get_agent_stats(self, agent_id: str) -> dict[str, Any]:
         """Get stats for a specific agent's contribution."""
         tag = f"agent:{agent_id}"
-        own_memories = [
-            n for n in self._space.episodic.nodes
-            if tag in n.tags
-        ]
+        own_memories = [n for n in self._space.episodic.nodes if tag in n.tags]
         return {
             "agent_id": agent_id,
             "memories_contributed": len(own_memories),
             "total_pool_size": len(self._space.episodic),
             "trust_map": {
-                k: v.value for k, v in self._agents.get(agent_id, AgentView(agent_id, self._space)).trust_map.items()
+                k: v.value
+                for k, v in self._agents.get(
+                    agent_id, AgentView(agent_id, self._space)
+                ).trust_map.items()
             },
         }
 

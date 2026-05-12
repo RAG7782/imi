@@ -10,14 +10,15 @@ Graceful degradation: all public functions are wrapped by imi_safe() —
 timeout 2s, silent fallback on any error. Same pattern as Immune Bridge.
 IMI failure never blocks SYMBIONT execution.
 """
+
 from __future__ import annotations
 
+import functools
 import json
 import logging
-import functools
 import threading
 from pathlib import Path
-from typing import Any, TypeVar, Callable
+from typing import Any, Callable, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,7 @@ def imi_safe(fallback: Any = None, timeout: float = _IMI_TIMEOUT_S):
     Guarantees IMI bridge never blocks SYMBIONT execution — identical contract
     to immune_bridge.bridge_health() graceful degradation.
     """
+
     def decorator(fn: F) -> F:
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
@@ -48,14 +50,21 @@ def imi_safe(fallback: Any = None, timeout: float = _IMI_TIMEOUT_S):
             t.start()
             t.join(timeout)
             if t.is_alive():
-                logger.warning("imi_safe: %s timed out after %.1fs — returning fallback", fn.__name__, timeout)
+                logger.warning(
+                    "imi_safe: %s timed out after %.1fs — returning fallback", fn.__name__, timeout
+                )
                 return fallback
             if exc_box[0] is not None:
-                logger.warning("imi_safe: %s raised %s — returning fallback", fn.__name__, exc_box[0])
+                logger.warning(
+                    "imi_safe: %s raised %s — returning fallback", fn.__name__, exc_box[0]
+                )
                 return fallback
             return result_box[0]
+
         return wrapper  # type: ignore[return-value]
+
     return decorator
+
 
 # FCM event directory
 FCM_EVENTS_DIR = Path.home() / ".fcm" / "events"
@@ -99,8 +108,10 @@ def check_priority_shift() -> str | None:
     for event_file in sorted(FCM_EVENTS_DIR.glob("*.json"), reverse=True)[:10]:
         try:
             event = json.loads(event_file.read_text())
-            if (event.get("type") == "custom"
-                and event.get("metadata", {}).get("signal_type") == "PRIORITY_SHIFT"):
+            if (
+                event.get("type") == "custom"
+                and event.get("metadata", {}).get("signal_type") == "PRIORITY_SHIFT"
+            ):
                 return event.get("metadata", {}).get("new_domain")
         except (json.JSONDecodeError, KeyError):
             continue
@@ -121,16 +132,20 @@ def get_mound_approved_artifacts() -> list[dict[str, Any]]:
     for event_file in sorted(FCM_EVENTS_DIR.glob("*.json"), reverse=True)[:50]:
         try:
             event = json.loads(event_file.read_text())
-            if (event.get("source") == "symbiont"
+            if (
+                event.get("source") == "symbiont"
                 and event.get("type") == "memory_created"
                 and event.get("metadata", {}).get("artifact_status") == "APPROVED"
-                and event.get("metadata", {}).get("quality", 0) >= 0.8):
-                artifacts.append({
-                    "title": event.get("title", ""),
-                    "content": event.get("content", ""),
-                    "tags": event.get("tags", []),
-                    "quality": event["metadata"]["quality"],
-                })
+                and event.get("metadata", {}).get("quality", 0) >= 0.8
+            ):
+                artifacts.append(
+                    {
+                        "title": event.get("title", ""),
+                        "content": event.get("content", ""),
+                        "tags": event.get("tags", []),
+                        "quality": event["metadata"]["quality"],
+                    }
+                )
         except (json.JSONDecodeError, KeyError):
             continue
 

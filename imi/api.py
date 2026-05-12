@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import os
 from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
@@ -55,7 +54,9 @@ class NavigateRequest(BaseModel):
     zoom: str = Field("medium", description="Resolution: orbital, medium, detailed, full")
     context: str = Field("", description="Additional search context")
     relevance_weight: float | None = Field(None, description="Override adaptive weight (None=auto)")
-    positional_optimize: bool = Field(True, description="Reorder results for primacy-recency (best items at start+end)")
+    positional_optimize: bool = Field(
+        True, description="Reorder results for primacy-recency (best items at start+end)"
+    )
 
 
 class MemoryHit(BaseModel):
@@ -152,7 +153,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="IMI — Integrated Memory Intelligence",
-    description="Cognitive memory API for AI agents. Temporal decay, affordances, graph-augmented retrieval, adaptive relevance weighting.",
+    description=(
+        "Cognitive memory API for AI agents. Temporal decay, affordances, "
+        "graph-augmented retrieval, adaptive relevance weighting."
+    ),
     version="0.2.0",
     lifespan=lifespan,
 )
@@ -208,20 +212,24 @@ def navigate(req: NavigateRequest):
     rw_used, intent_obj = space.adaptive_rw.classify_with_info(req.query)
 
     memories = []
-    for m in nav.memories[:req.top_k]:
-        memories.append(MemoryHit(
-            score=round(m["score"], 3),
-            content=m["content"],
-            id=m.get("id", ""),
-            tags=m.get("tags", []),
-            affordances=m.get("affordances", [])[:2],
-            affect=m.get("affect_str", ""),
-        ))
+    for m in nav.memories[: req.top_k]:
+        memories.append(
+            MemoryHit(
+                score=round(m["score"], 3),
+                content=m["content"],
+                id=m.get("id", ""),
+                tags=m.get("tags", []),
+                affordances=m.get("affordances", [])[:2],
+                affect=m.get("affect_str", ""),
+            )
+        )
 
     return NavigateResponse(
         query=req.query,
         intent=intent_obj.name,
-        relevance_weight_used=round(rw_used if req.relevance_weight is None else req.relevance_weight, 3),
+        relevance_weight_used=round(
+            rw_used if req.relevance_weight is None else req.relevance_weight, 3
+        ),
         zoom=req.zoom,
         hits=len(memories),
         memories=memories,
@@ -238,7 +246,9 @@ def dream():
         clusters_formed=report.clusters_formed,
         patterns_extracted=report.patterns_extracted,
         convergence={
-            "energy": round(space.annealing.energy_history[-1], 4) if space.annealing.energy_history else None,
+            "energy": round(space.annealing.energy_history[-1], 4)
+            if space.annealing.energy_history
+            else None,
             "iteration": space.annealing.iteration,
             "converged": space.annealing.converged,
         },
@@ -255,14 +265,16 @@ def search_actions(req: SearchActionsRequest):
 
     items = []
     for r in results:
-        items.append(ActionHit(
-            action=r["action"],
-            confidence=round(r["confidence"], 2),
-            conditions=r["conditions"],
-            similarity=round(r["similarity"], 3),
-            memory_summary=r["memory_summary"][:200],
-            node_id=r["node_id"],
-        ))
+        items.append(
+            ActionHit(
+                action=r["action"],
+                confidence=round(r["confidence"], 2),
+                conditions=r["conditions"],
+                similarity=round(r["similarity"], 3),
+                memory_summary=r["memory_summary"][:200],
+                node_id=r["node_id"],
+            )
+        )
 
     return SearchActionsResponse(query=req.action_query, results=items)
 
@@ -284,7 +296,9 @@ def stats():
         annealing={
             "iteration": space.annealing.iteration,
             "converged": space.annealing.converged,
-            "energy": round(space.annealing.energy_history[-1], 4) if space.annealing.energy_history else None,
+            "energy": round(space.annealing.energy_history[-1], 4)
+            if space.annealing.energy_history
+            else None,
         },
         persist_dir=str(space.persist_dir) if space.persist_dir else None,
     )

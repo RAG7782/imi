@@ -3,16 +3,16 @@
 Simulates N sessions with dream/consolidation cycles between them.
 Core hypothesis: recall >=85% after 30 sessions.
 """
+
 from __future__ import annotations
+
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
-import numpy as np
-
-from ..node import MemoryNode, AffectiveTag
-from ..store import VectorStore
 from ..embedder import SentenceTransformerEmbedder
 from ..maintain import run_maintenance
+from ..node import AffectiveTag, MemoryNode
+from ..store import VectorStore
 from .ambench import generate_incidents, recall_at_k
 
 
@@ -20,8 +20,8 @@ from .ambench import generate_incidents, recall_at_k
 class CrossSessionResults:
     initial_r5: float = 0.0
     final_r5: float = 0.0
-    retention_rate: float = 0.0     # final_r5 / initial_r5
-    r5_per_session: list = None     # Recall at each checkpoint
+    retention_rate: float = 0.0  # final_r5 / initial_r5
+    r5_per_session: list = None  # Recall at each checkpoint
     n_sessions: int = 0
     n_dreams: int = 0
     patterns_consolidated: int = 0
@@ -62,7 +62,14 @@ class CrossSessionResults:
 class CrossSession:
     """Benchmark: recall persistence through dream cycles."""
 
-    def __init__(self, n_incidents: int = 100, n_days: int = 30, n_sessions: int = 30, seed: int = 42, embedder=None):
+    def __init__(
+        self,
+        n_incidents: int = 100,
+        n_days: int = 30,
+        n_sessions: int = 30,
+        seed: int = 42,
+        embedder=None,
+    ):
         self.n_incidents = n_incidents
         self.n_days = n_days
         self.n_sessions = n_sessions
@@ -70,7 +77,9 @@ class CrossSession:
         self.embedder = embedder or SentenceTransformerEmbedder()
         self.incidents = generate_incidents(n_incidents, n_days, seed)
 
-    def _eval_recall(self, store: VectorStore, test_incidents: list[dict], rw: float = 0.10) -> float:
+    def _eval_recall(
+        self, store: VectorStore, test_incidents: list[dict], rw: float = 0.10
+    ) -> float:
         """Evaluate recall on test set."""
         hits = 0
         for inc in test_incidents:
@@ -117,7 +126,9 @@ class CrossSession:
         for session in range(self.n_sessions):
             # Dream (consolidation cycle)
             report = run_maintenance(
-                episodic, semantic, self.embedder,
+                episodic,
+                semantic,
+                self.embedder,
                 similarity_threshold=0.45,
                 budget=50,
             )

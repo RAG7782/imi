@@ -43,15 +43,16 @@ Ref: ~/.aiox/integrations/crypto_wrapper.py
      ~/.aiox/integrations/sanitizer_wrapper.py
      Camada 1 do plano de integração Synapse Layer → ecossistema AIP
 """
+
 from __future__ import annotations
 
-import os
-import sys
 import json
 import logging
+import os
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Any
+from typing import Any, Optional
 
 logger = logging.getLogger("imi.crypto_layer")
 
@@ -70,7 +71,8 @@ _crypto_ok = False
 _sanitizer_ok = False
 
 try:
-    from crypto_wrapper import encrypt_str, decrypt_str, derive_key, generate_key, key_fingerprint
+    from crypto_wrapper import decrypt_str, derive_key, encrypt_str, key_fingerprint
+
     _crypto_ok = True
     logger.debug("crypto_layer: crypto_wrapper carregado")
 except ImportError as e:
@@ -78,6 +80,7 @@ except ImportError as e:
 
 try:
     from sanitizer_wrapper import sanitize
+
     _sanitizer_ok = True
     logger.debug("crypto_layer: sanitizer_wrapper carregado")
 except ImportError as e:
@@ -104,7 +107,9 @@ def _get_key() -> Optional[bytes]:
         try:
             _KEY = bytes.fromhex(hex_key)
             _KEY_FINGERPRINT = key_fingerprint(_KEY)
-            logger.info("crypto_layer: chave carregada de IMI_CRYPTO_KEY (fp: %s)", _KEY_FINGERPRINT)
+            logger.info(
+                "crypto_layer: chave carregada de IMI_CRYPTO_KEY (fp: %s)", _KEY_FINGERPRINT
+            )
             return _KEY
         except ValueError:
             logger.warning("crypto_layer: IMI_CRYPTO_KEY inválida — tentando IMI_CRYPTO_SECRET")
@@ -142,6 +147,7 @@ def is_encrypted(text: str) -> bool:
 
 # ─── Auditoria ────────────────────────────────────────────────────────────
 
+
 def _audit_log(node_id: str, pii_count: int, risk_score: float, sanitizer_backend: str) -> None:
     """Append-only audit log — nunca loga conteúdo."""
     try:
@@ -161,6 +167,7 @@ def _audit_log(node_id: str, pii_count: int, risk_score: float, sanitizer_backen
 
 
 # ─── API pública ───────────────────────────────────────────────────────────
+
 
 def secure_encode(
     space: Any,
@@ -285,7 +292,7 @@ def decrypt_experience(text: str) -> str:
         return text
 
     try:
-        hex_payload = text[len(_ENC_PREFIX):]
+        hex_payload = text[len(_ENC_PREFIX) :]
         return decrypt_str(hex_payload, key)
     except Exception as e:
         logger.error("crypto_layer: decrypt falhou para node (%s)", e)

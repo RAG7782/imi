@@ -9,7 +9,7 @@ Based on: Gibson (1979) ecological psychology.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from imi.llm import LLMAdapter
 
@@ -18,10 +18,10 @@ from imi.llm import LLMAdapter
 class Affordance:
     """An action potential derived from a memory."""
 
-    action: str              # what this memory enables doing
-    confidence: float        # 0.0-1.0 how confident we are this is applicable
-    conditions: str          # when/where this affordance applies
-    domain: str = ""         # domain tag (e.g., "debugging", "architecture")
+    action: str  # what this memory enables doing
+    confidence: float  # 0.0-1.0 how confident we are this is applicable
+    conditions: str  # when/where this affordance applies
+    domain: str = ""  # domain tag (e.g., "debugging", "architecture")
 
     def to_dict(self) -> dict:
         return {
@@ -80,12 +80,14 @@ def extract_affordances(experience: str, llm: LLMAdapter) -> list[Affordance]:
     affordances = []
     for item in items:
         try:
-            affordances.append(Affordance(
-                action=item.get("action", ""),
-                confidence=float(item.get("confidence", 0.5)),
-                conditions=item.get("conditions", ""),
-                domain=item.get("domain", ""),
-            ))
+            affordances.append(
+                Affordance(
+                    action=item.get("action", ""),
+                    confidence=float(item.get("confidence", 0.5)),
+                    conditions=item.get("conditions", ""),
+                    domain=item.get("domain", ""),
+                )
+            )
         except (ValueError, KeyError):
             continue
 

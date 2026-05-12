@@ -16,6 +16,7 @@ Env vars
     IMI_EMBED_CACHE=1          enable (default: off for backward compat)
     IMI_EMBED_CACHE_SIZE=256   LRU capacity (number of distinct queries)
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -55,7 +56,7 @@ class LRUEmbedderCache:
     def embed(self, text: str) -> np.ndarray:
         key = hashlib.md5(text.encode(), usedforsecurity=False).hexdigest()
         if key in self._cache:
-            self._cache.move_to_end(key)   # LRU: mark as recently used
+            self._cache.move_to_end(key)  # LRU: mark as recently used
             self._hits += 1
             return self._cache[key]
         emb = self._embedder.embed(text)

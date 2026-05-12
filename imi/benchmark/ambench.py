@@ -18,12 +18,10 @@ Quick mode: n_days=90, n_incidents=300 (backward compatible).
 
 from __future__ import annotations
 
-import copy
 import random
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
-from math import log2
 
 import numpy as np
 
@@ -32,14 +30,14 @@ from imi.maintain import find_clusters
 from imi.node import MemoryNode
 from imi.store import VectorStore
 
-
 # ---------------------------------------------------------------------------
 # Incident templates (10 pattern types)
 # ---------------------------------------------------------------------------
 
 INCIDENT_TEMPLATES = {
     "connection_pool": [
-        "Connection pool exhaustion on {service}: {pool_size} connections maxed out during {trigger}",
+        "Connection pool exhaustion on {service}: {pool_size} connections maxed out "
+        "during {trigger}",
         "Database connection pool depleted on {service} after {trigger}, all queries timing out",
     ],
     "memory_leak": [
@@ -48,7 +46,8 @@ INCIDENT_TEMPLATES = {
     ],
     "timeout_cascade": [
         "Timeout cascade: {service_a} → {service_b} → {service_c}, p99 latency {latency}ms",
-        "Cascading timeouts starting at {service_a}: downstream {service_b} and {service_c} affected",
+        "Cascading timeouts starting at {service_a}: downstream {service_b} "
+        "and {service_c} affected",
     ],
     "cert_expiry": [
         "TLS certificate expired on {service}, breaking connections from {affected_count} clients",
@@ -59,15 +58,18 @@ INCIDENT_TEMPLATES = {
         "{service} v{version} deployment failed, errors at {pct}%, rolling back",
     ],
     "dns_failure": [
-        "DNS resolution failure for {service}.internal: {affected_count} services impacted for {duration}m",
-        "Internal DNS returning NXDOMAIN for {service}: {affected_count} dependent services failing",
+        "DNS resolution failure for {service}.internal: {affected_count} services "
+        "impacted for {duration}m",
+        "Internal DNS returning NXDOMAIN for {service}: {affected_count} dependent "
+        "services failing",
     ],
     "disk_full": [
         "Disk full on {service} node: {path} at 100%, writes failing",
         "{service} disk space exhausted, log rotation failed",
     ],
     "rate_limit": [
-        "Rate limiter triggered on {service}: {rps} req/s exceeded threshold, {pct}% requests rejected",
+        "Rate limiter triggered on {service}: {rps} req/s exceeded threshold, "
+        "{pct}% requests rejected",
         "{service} rate limiting {pct}% of traffic at {rps} req/s",
     ],
     "data_inconsistency": [
@@ -81,13 +83,26 @@ INCIDENT_TEMPLATES = {
 }
 
 SERVICES = [
-    "api-gateway", "user-service", "payment-service", "order-service",
-    "inventory-service", "notification-service", "analytics-service",
-    "auth-service", "search-service", "cdn-edge",
+    "api-gateway",
+    "user-service",
+    "payment-service",
+    "order-service",
+    "inventory-service",
+    "notification-service",
+    "analytics-service",
+    "auth-service",
+    "search-service",
+    "cdn-edge",
 ]
 
-TRIGGERS = ["Black Friday traffic", "batch job spike", "DDoS attempt",
-            "marketing campaign", "data migration", "partner API burst"]
+TRIGGERS = [
+    "Black Friday traffic",
+    "batch job spike",
+    "DDoS attempt",
+    "marketing campaign",
+    "data migration",
+    "partner API burst",
+]
 
 # Canonical remediation actions per incident pattern (ground truth for task success)
 REMEDIATION_ACTIONS = {
@@ -151,14 +166,16 @@ def generate_incidents(n: int = 600, days: int = 365, seed: int = 42) -> list[di
         text = template.format(**params)
         day = int(i / n * days)
 
-        incidents.append({
-            "id": f"inc_{i:04d}",
-            "text": text,
-            "pattern_type": pattern_type,
-            "day": day,
-            "severity": rng.choice(["low", "medium", "high", "critical"]),
-            "expected_action": REMEDIATION_ACTIONS[pattern_type],
-        })
+        incidents.append(
+            {
+                "id": f"inc_{i:04d}",
+                "text": text,
+                "pattern_type": pattern_type,
+                "day": day,
+                "severity": rng.choice(["low", "medium", "high", "critical"]),
+                "expected_action": REMEDIATION_ACTIONS[pattern_type],
+            }
+        )
 
     return incidents
 
@@ -214,7 +231,9 @@ def task_success_rate(
     action_match = 0.0
     for node in top_k:
         for affordance in node.affordances:
-            aff_words = set(affordance.action.lower().split()) if hasattr(affordance, 'action') else set()
+            aff_words = (
+                set(affordance.action.lower().split()) if hasattr(affordance, "action") else set()
+            )
             if len(action_keywords & aff_words) >= 2:  # at least 2 keyword overlap
                 action_match = 1.0
                 break
@@ -269,6 +288,7 @@ def pattern_extraction_accuracy(
 @dataclass
 class AMBenchResults:
     """Results from running AMBench."""
+
     # Core retrieval
     retrieval_r5: float = 0.0
     retrieval_r10: float = 0.0
@@ -292,7 +312,8 @@ class AMBenchResults:
             quarterly = f"\n  Quarterly R@5:  {qs}"
         return (
             f"AMBench Results ({self.system_name}):\n"
-            f"  Incidents: {self.n_incidents} over {self.n_days} days ({self.n_patterns} patterns)\n"
+            f"  Incidents: {self.n_incidents} over {self.n_days} days "
+            f"({self.n_patterns} patterns)\n"
             f"  Retrieval R@5:        {self.retrieval_r5:.3f}\n"
             f"  Retrieval R@10:       {self.retrieval_r10:.3f}\n"
             f"  Cluster Purity:       {self.cluster_purity_score:.3f}\n"
@@ -397,9 +418,7 @@ class AMBench:
             # Evaluate periodically
             if i > 0 and i % eval_every == 0:
                 query_emb = emb
-                results = store.search(
-                    query_emb, top_k=10, relevance_weight=relevance_weight
-                )
+                results = store.search(query_emb, top_k=10, relevance_weight=relevance_weight)
                 retrieved_nodes = [n for n, _ in results]
                 retrieved_patterns = [n.tags[0] if n.tags else "" for n in retrieved_nodes]
 
@@ -434,11 +453,7 @@ class AMBench:
         extraction_acc = pattern_extraction_accuracy(clusters, self._ground_truth)
 
         # Quarterly averages (skip empty quarters for short runs)
-        quarterly_avg = {
-            q: float(np.mean(scores))
-            for q, scores in quarterly_r5.items()
-            if scores
-        }
+        quarterly_avg = {q: float(np.mean(scores)) for q, scores in quarterly_r5.items() if scores}
 
         duration = time.time() - t0
 

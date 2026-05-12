@@ -25,8 +25,6 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-import numpy as np
-
 from imi.graph import EdgeType, MemoryGraph
 from imi.llm import LLMAdapter
 from imi.node import MemoryNode
@@ -36,6 +34,7 @@ from imi.store import VectorStore
 @dataclass
 class CausalCandidate:
     """A potential causal relationship between two memories."""
+
     source_id: str
     target_id: str
     similarity: float
@@ -84,13 +83,15 @@ def detect_causal_candidates(
         if cross_domain_only and node_domain == new_domain:
             continue
 
-        candidates.append(CausalCandidate(
-            source_id=new_node.id,
-            target_id=node.id,
-            similarity=score,
-            source_domain=new_domain,
-            target_domain=node_domain,
-        ))
+        candidates.append(
+            CausalCandidate(
+                source_id=new_node.id,
+                target_id=node.id,
+                similarity=score,
+                source_domain=new_domain,
+                target_domain=node_domain,
+            )
+        )
 
         if len(candidates) >= max_candidates:
             break
@@ -152,12 +153,6 @@ def confirm_causal_with_llm(
     if not data.get("related", False):
         return None
 
-    edge_type_map = {
-        "causal": EdgeType.CAUSAL,
-        "co_occurrence": EdgeType.CO_OCCURRENCE,
-        "similar": EdgeType.SIMILAR,
-    }
-
     return CausalCandidate(
         source_id=node_a.id,
         target_id=node_b.id,
@@ -185,7 +180,8 @@ def auto_link_causal(
     Returns number of edges added.
     """
     candidates = detect_causal_candidates(
-        new_node, store,
+        new_node,
+        store,
         threshold=threshold,
         max_candidates=max_edges * 2,  # over-fetch for filtering
     )
@@ -211,7 +207,11 @@ def auto_link_causal(
                     added += 1
         else:
             # Embedding-only: add as causal if cross-domain, similar if same-domain
-            edge_type = EdgeType.CAUSAL if candidate.source_domain != candidate.target_domain else EdgeType.SIMILAR
+            edge_type = (
+                EdgeType.CAUSAL
+                if candidate.source_domain != candidate.target_domain
+                else EdgeType.SIMILAR
+            )
             graph.add_edge(
                 candidate.source_id,
                 candidate.target_id,

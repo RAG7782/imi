@@ -22,16 +22,15 @@ Author: Renato Aparecido Gomes (ORCID: 0009-0005-7380-9876)
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass, field
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 if TYPE_CHECKING:
-    from .node import MemoryNode
     from .embedder import Embedder
+    from .node import MemoryNode
 
 
 # ── Entity Extraction ─────────────────────────────────────
@@ -51,9 +50,7 @@ KNOWN_ENTITIES: dict[str, str] = {
 }
 
 # Regex for extracting capitalized entities or known proper nouns
-_ENTITY_PATTERN = re.compile(
-    r'\b([A-Z][a-zA-Z]{2,}(?:\s+[A-Z][a-zA-Z]+)*)\b'
-)
+_ENTITY_PATTERN = re.compile(r"\b([A-Z][a-zA-Z]{2,}(?:\s+[A-Z][a-zA-Z]+)*)\b")
 
 
 def extract_entities(text: str, max_entities: int = 5) -> list[str]:
@@ -88,6 +85,7 @@ def extract_entities(text: str, max_entities: int = 5) -> list[str]:
 
 
 # ── DS-d Scoring ──────────────────────────────────────────
+
 
 def compute_ds_d(
     text: str,
@@ -185,12 +183,14 @@ def detect_flags(node: "MemoryNode") -> list[str]:
 
 # ── SDE-AAAK Tag Format ──────────────────────────────────
 
+
 @dataclass
 class SDETag:
     """Structured SDE-AAAK metadata tag for a memory node.
 
     Format: ENT1,ENT2|TYPE:decision|SAL:0.9|DS-d:0.85|FLAG:CORE,PIVOT
     """
+
     entities: list[str] = field(default_factory=list)
     memory_type: str = ""
     salience: float = 0.0
@@ -237,8 +237,7 @@ class SDETag:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "SDETag":
-        return cls(**{k: v for k, v in d.items()
-                      if k in cls.__dataclass_fields__})
+        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
 
 
 def parse_tag(tag_str: str) -> SDETag:

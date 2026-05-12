@@ -12,10 +12,9 @@ from __future__ import annotations
 
 import json
 import logging
+import sqlite3
 import time
-import uuid
 from abc import ABC, abstractmethod
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -111,17 +110,11 @@ class StorageBackend(ABC):
 
     def query_by_session(self, session_id: str) -> list[str]:
         """Return node IDs belonging to a session."""
-        return [
-            nid
-            for nid, ctx in self.get_temporal().items()
-            if ctx.session_id == session_id
-        ]
+        return [nid for nid, ctx in self.get_temporal().items() if ctx.session_id == session_id]
 
     # --- Versioning ---
 
-    def get_node_history(
-        self, store_name: str, node_id: str
-    ) -> list[MemoryNode]:
+    def get_node_history(self, store_name: str, node_id: str) -> list[MemoryNode]:
         """Return all versions of a node, newest first. Default: current only."""
         node = self.get_node(store_name, node_id)
         return [node] if node else []
@@ -266,9 +259,7 @@ class JSONBackend(StorageBackend):
             "episodic": [n.to_dict() for n in self.get_all_nodes("episodic")],
             "semantic": [n.to_dict() for n in self.get_all_nodes("semantic")],
             "anchors": self.get_anchors(),
-            "temporal": {
-                nid: ctx.to_dict() for nid, ctx in self.get_temporal().items()
-            },
+            "temporal": {nid: ctx.to_dict() for nid, ctx in self.get_temporal().items()},
         }
 
     @timed("json.import_all")
@@ -283,10 +274,7 @@ class JSONBackend(StorageBackend):
         if "anchors" in data:
             self.put_anchors(data["anchors"])
         if "temporal" in data:
-            contexts = {
-                nid: TemporalContext.from_dict(d)
-                for nid, d in data["temporal"].items()
-            }
+            contexts = {nid: TemporalContext.from_dict(d) for nid, d in data["temporal"].items()}
             self.put_temporal(contexts)
 
 
@@ -382,15 +370,11 @@ class SQLiteBackend(StorageBackend):
         db_path: str | Path,
         enable_fts: bool = True,
     ) -> None:
-        import sqlite3
-
         self.db_path = Path(db_path)
         self.enable_fts = enable_fts
         self._conn: sqlite3.Connection | None = None
 
     def _get_conn(self) -> "sqlite3.Connection":
-        import sqlite3
-
         if self._conn is None:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
             self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
@@ -755,8 +739,7 @@ class SQLiteBackend(StorageBackend):
     def query_by_session(self, session_id: str) -> list[str]:
         conn = self._get_conn()
         rows = conn.execute(
-            "SELECT node_id FROM temporal_contexts WHERE session_id = ? "
-            "ORDER BY sequence_pos",
+            "SELECT node_id FROM temporal_contexts WHERE session_id = ? ORDER BY sequence_pos",
             (session_id,),
         ).fetchall()
         return [row["node_id"] for row in rows]
@@ -764,9 +747,7 @@ class SQLiteBackend(StorageBackend):
     # --- Versioning ---
 
     @timed("sqlite.get_node_history")
-    def get_node_history(
-        self, store_name: str, node_id: str
-    ) -> list[MemoryNode]:
+    def get_node_history(self, store_name: str, node_id: str) -> list[MemoryNode]:
         conn = self._get_conn()
         # H10 fix: filter out tombstones (is_deleted=1)
         rows = conn.execute(
@@ -818,8 +799,15 @@ class SQLiteBackend(StorageBackend):
             except Exception as e:
                 logger.warning("compact_versions: VACUUM failed (%s)", e)
 
-        logger.info("compact_versions: deleted %d rows (before=%d after=%d)", deleted, before, after)
-        return {"deleted_rows": deleted, "vacuumed": vacuumed, "rows_before": before, "rows_after": after}
+        logger.info(
+            "compact_versions: deleted %d rows (before=%d after=%d)", deleted, before, after
+        )
+        return {
+            "deleted_rows": deleted,
+            "vacuumed": vacuumed,
+            "rows_before": before,
+            "rows_after": after,
+        }
 
     def rebuild_fts(self) -> int:
         """Rebuild FTS index from current nodes. C3 fix companion.
@@ -847,9 +835,7 @@ class SQLiteBackend(StorageBackend):
             "episodic": [n.to_dict() for n in self.get_all_nodes("episodic")],
             "semantic": [n.to_dict() for n in self.get_all_nodes("semantic")],
             "anchors": self.get_anchors(),
-            "temporal": {
-                nid: ctx.to_dict() for nid, ctx in self.get_temporal().items()
-            },
+            "temporal": {nid: ctx.to_dict() for nid, ctx in self.get_temporal().items()},
         }
 
     @timed("sqlite.import_all")
@@ -863,8 +849,5 @@ class SQLiteBackend(StorageBackend):
         if "anchors" in data:
             self.put_anchors(data["anchors"])
         if "temporal" in data:
-            contexts = {
-                nid: TemporalContext.from_dict(d)
-                for nid, d in data["temporal"].items()
-            }
+            contexts = {nid: TemporalContext.from_dict(d) for nid, d in data["temporal"].items()}
             self.put_temporal(contexts)

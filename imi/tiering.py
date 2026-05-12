@@ -7,16 +7,16 @@ without changing the underlying episodic/semantic storage.
 Inspired by MemPalace's spatial hierarchy, adapted for IMI's
 graph-augmented CLS with affect and affordances.
 """
+
 from __future__ import annotations
 
-import time
 import json
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from .node import MemoryNode
-
 
 # ── Constants ──────────────────────────────────────────────
 
@@ -38,9 +38,11 @@ DEMOTE_THRESHOLDS = {
 
 # ── L0: Identity ──────────────────────────────────────────
 
+
 @dataclass
 class L0Identity:
     """Agent identity — always loaded, ~50 tokens."""
+
     agent_name: str = "IMI Agent"
     domain: str = ""
     session_id: str = ""
@@ -60,6 +62,7 @@ class L0Identity:
         p = path or Path.home() / ".imi" / "identity.json"
         p.parent.mkdir(parents=True, exist_ok=True)
         from dataclasses import asdict
+
         p.write_text(json.dumps(asdict(self), indent=2))
 
     def render(self) -> str:
@@ -81,9 +84,11 @@ class L0Identity:
 
 # ── L1: Hot Facts ─────────────────────────────────────────
 
+
 @dataclass
 class L1HotFacts:
     """Top-N facts + Top-3 affordances — always loaded, ~120 tokens."""
+
     facts: list[dict[str, Any]] = field(default_factory=list)
     affordances: list[dict[str, Any]] = field(default_factory=list)
     generated_at: float = 0.0
@@ -95,12 +100,12 @@ class L1HotFacts:
         if self.facts:
             parts.append("Key facts:")
             for f in self.facts[:7]:  # Cap at 7 facts
-                sal = f.get('salience', 0)
+                sal = f.get("salience", 0)
                 parts.append(f"- {f['summary']} [sal:{sal:.1f}]")
         if self.affordances:
             parts.append("Actions available:")
             for a in self.affordances[:3]:
-                conf = a.get('confidence', 0)
+                conf = a.get("confidence", 0)
                 parts.append(f"- {a['action']} (conf:{conf:.1f})")
         return "\n".join(parts)
 
@@ -177,24 +182,28 @@ def generate_l1(
     for node in top_nodes:
         summary = node.summary_orbital or node.seed[:80] if node.seed else ""
         if summary:
-            facts.append({
-                "id": node.id,
-                "summary": summary.strip(),
-                "salience": node.affect.salience if node.affect else 0.5,
-                "access_count": node.access_count,
-                "tags": node.tags[:3],
-            })
+            facts.append(
+                {
+                    "id": node.id,
+                    "summary": summary.strip(),
+                    "salience": node.affect.salience if node.affect else 0.5,
+                    "access_count": node.access_count,
+                    "tags": node.tags[:3],
+                }
+            )
 
     # Extract top affordances across all high-relevance nodes
     all_affordances = []
     for node, score in candidates[:20]:  # Search in top 20 nodes
         for aff in node.affordances:
-            all_affordances.append({
-                "action": aff.action,
-                "confidence": aff.confidence,
-                "conditions": aff.conditions,
-                "source_node": node.id,
-            })
+            all_affordances.append(
+                {
+                    "action": aff.action,
+                    "confidence": aff.confidence,
+                    "conditions": aff.conditions,
+                    "source_node": node.id,
+                }
+            )
 
     # Sort affordances by confidence, take top N
     all_affordances.sort(key=lambda x: x["confidence"], reverse=True)
@@ -208,6 +217,7 @@ def generate_l1(
 
 
 # ── Tiering Policy ────────────────────────────────────────
+
 
 def compute_tier(node: MemoryNode, *, channel_weights: dict[str, float] | None = None) -> int:
     """Compute recommended tier for a node based on relevance signals.
@@ -228,9 +238,12 @@ def compute_tier(node: MemoryNode, *, channel_weights: dict[str, float] | None =
         return 1 if rel >= 0.3 else 2
 
     # High relevance + frequently accessed -> L1
-    if (rel >= 0.7
+    if (
+        rel >= 0.7
         and node.access_count >= PROMOTE_THRESHOLDS["access_count_min"]
-        and node.affect and node.affect.salience >= PROMOTE_THRESHOLDS["salience_min"]):
+        and node.affect
+        and node.affect.salience >= PROMOTE_THRESHOLDS["salience_min"]
+    ):
         return 1
 
     # SYMBIONT channel boost (Sinergia 1)

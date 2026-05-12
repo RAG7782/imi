@@ -25,9 +25,9 @@ Rollback
 --------
     export IMI_HYBRID_SCORER=0   # instant revert, no migration needed
 """
+
 from __future__ import annotations
 
-import math
 import os
 import time
 from typing import TYPE_CHECKING
@@ -70,6 +70,7 @@ _WEIGHTS: list[float] = _load_weights()
 # Pre-compute helpers (called at write / access time, NOT at query time)
 # ---------------------------------------------------------------------------
 
+
 def update_cached_resonance(node: "MemoryNode") -> None:
     """Update node._cached_resonance from current access_count.
 
@@ -91,6 +92,7 @@ def update_cached_graph_degree(node: "MemoryNode", degree: int) -> None:
 # ---------------------------------------------------------------------------
 # Core hybrid scorer
 # ---------------------------------------------------------------------------
+
 
 def hybrid_score(
     node: "MemoryNode",
@@ -156,4 +158,4 @@ def hybrid_score(
     f6 = getattr(node, "_cached_graph_degree", 0.0)
 
     w = _WEIGHTS
-    return w[0]*f1 + w[1]*f2 + w[2]*f3 + w[3]*f4 + w[4]*f5 + w[5]*f6
+    return w[0] * f1 + w[1] * f2 + w[2] * f3 + w[3] * f4 + w[4] * f5 + w[5] * f6

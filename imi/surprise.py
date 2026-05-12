@@ -16,7 +16,6 @@ Based on: Rao & Ballard (1999), Friston (2005) Free Energy Principle.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
 
 from imi.llm import LLMAdapter
 
@@ -25,10 +24,10 @@ from imi.llm import LLMAdapter
 class SurpriseResult:
     """The output of predictive coding: what was unexpected."""
 
-    prediction: str           # what the model expected
-    actual: str               # what actually happened
-    surprise: str             # the delta — what was unexpected
-    magnitude: float          # 0.0 (completely expected) to 1.0 (completely novel)
+    prediction: str  # what the model expected
+    actual: str  # what actually happened
+    surprise: str  # the delta — what was unexpected
+    magnitude: float  # 0.0 (completely expected) to 1.0 (completely novel)
     surprise_elements: list[str] = field(default_factory=list)  # itemized surprises
 
     def __str__(self) -> str:

@@ -39,6 +39,7 @@ def reset_space(tmp_path, monkeypatch):
     """Reset global space and use temp db before each test."""
     monkeypatch.setenv("IMI_DB", str(tmp_path / "test.db"))
     from imi.integrations.fcm_security import SecureFCMBridge
+
     monkeypatch.setattr(SecureFCMBridge, "emit_encode", lambda self, node: None)
     mcp_mod._space = IMISpace.from_sqlite(
         tmp_path / "test.db",
@@ -70,9 +71,7 @@ class TestImiEncode:
         assert result["mass"] > 0
 
     def test_encode_with_tags(self):
-        result = json.loads(im_enc(
-            "Database connection timeout", tags="db,timeout", source="test"
-        ))
+        result = json.loads(im_enc("Database connection timeout", tags="db,timeout", source="test"))
         assert "db" in result["tags"]
         assert "timeout" in result["tags"]
 

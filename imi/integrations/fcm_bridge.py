@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import json
 import os
-import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -49,13 +48,14 @@ def _minify(text: str, max_chars: int = _FCM_CONTENT_MAX_CHARS) -> str:
         return text
     return text[:max_chars] + "…[truncated]"
 
+
 # Trust gradient: IMI source → salience floor
 # Memories from less-trusted sources get lower salience floors,
 # making them more likely to be filtered by the membrane.
 TRUST_GRADIENT = {
-    "self": 0.9,      # This agent's own memories — highest trust
-    "trusted": 0.7,   # Verified peer agents
-    "peer": 0.5,      # Known but unverified agents
+    "self": 0.9,  # This agent's own memories — highest trust
+    "trusted": 0.7,  # Verified peer agents
+    "peer": 0.5,  # Known but unverified agents
     "external": 0.3,  # Unknown external sources
 }
 
@@ -165,6 +165,7 @@ class FCMBridge:
         imi_seed = getattr(node, "seed", "")
         try:
             from imi.integrations.crypto_layer import is_encrypted
+
             if is_encrypted(content):
                 imi_seed = "[encrypted]"
         except ImportError:

@@ -20,14 +20,12 @@ import re
 from dataclasses import dataclass
 from enum import Enum
 
-import numpy as np
-
 
 class QueryIntent(str, Enum):
-    TEMPORAL = "temporal"       # User wants recent/frequent memories
-    EXPLORATORY = "exploratory" # User wants comprehensive search
-    ACTION = "action"           # User wants to know what to DO
-    DEFAULT = "default"         # General query
+    TEMPORAL = "temporal"  # User wants recent/frequent memories
+    EXPLORATORY = "exploratory"  # User wants comprehensive search
+    ACTION = "action"  # User wants to know what to DO
+    DEFAULT = "default"  # General query
 
 
 # Optimal rw per intent (from WS-A ablation + WS-B temporal experiments)
@@ -40,26 +38,26 @@ INTENT_RW = {
 
 # Keyword patterns per intent
 TEMPORAL_PATTERNS = re.compile(
-    r'\b(recent|latest|last\s+(?:week|month|day|hour|time)|'
-    r'today|yesterday|just\s+(?:happened|now|saw)|'
-    r'this\s+(?:week|month|sprint)|current|ongoing|active|'
-    r'recente|último|última|hoje|ontem|esta\s+semana)\b',
+    r"\b(recent|latest|last\s+(?:week|month|day|hour|time)|"
+    r"today|yesterday|just\s+(?:happened|now|saw)|"
+    r"this\s+(?:week|month|sprint)|current|ongoing|active|"
+    r"recente|último|última|hoje|ontem|esta\s+semana)\b",
     re.IGNORECASE,
 )
 
 EXPLORATORY_PATTERNS = re.compile(
-    r'\b(find\s+all|list\s+(?:all|every)|every|all\s+(?:incidents|cases|times)|'
-    r'comprehensive|exhaustive|complete\s+list|'
-    r'search\s+for|show\s+me\s+all|everything\s+about|'
-    r'todos|listar|buscar\s+todos|completo)\b',
+    r"\b(find\s+all|list\s+(?:all|every)|every|all\s+(?:incidents|cases|times)|"
+    r"comprehensive|exhaustive|complete\s+list|"
+    r"search\s+for|show\s+me\s+all|everything\s+about|"
+    r"todos|listar|buscar\s+todos|completo)\b",
     re.IGNORECASE,
 )
 
 ACTION_PATTERNS = re.compile(
-    r'\b(how\s+to|fix|prevent|handle|resolve|mitigate|avoid|'
-    r'what\s+(?:should|can|do)\s+(?:I|we)|steps?\s+to|'
-    r'procedure|runbook|action|remediat|'
-    r'como|corrigir|prevenir|resolver|evitar)\b',
+    r"\b(how\s+to|fix|prevent|handle|resolve|mitigate|avoid|"
+    r"what\s+(?:should|can|do)\s+(?:I|we)|steps?\s+to|"
+    r"procedure|runbook|action|remediat|"
+    r"como|corrigir|prevenir|resolver|evitar)\b",
     re.IGNORECASE,
 )
 

@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-import time
-import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -41,16 +39,18 @@ class VectorStore:
         self._dirty = True
         if self.backend:
             self.backend.put_node(self.store_name, node)
-            self.backend.log_event(MemoryEvent(
-                event_type=ENCODE,
-                node_id=node.id,
-                store_name=self.store_name,
-                metadata={
-                    "tags": node.tags,
-                    "surprise": node.surprise_magnitude,
-                    "mass": node.mass,
-                },
-            ))
+            self.backend.log_event(
+                MemoryEvent(
+                    event_type=ENCODE,
+                    node_id=node.id,
+                    store_name=self.store_name,
+                    metadata={
+                        "tags": node.tags,
+                        "surprise": node.surprise_magnitude,
+                        "mass": node.mass,
+                    },
+                )
+            )
 
     def add_batch(self, nodes: list[MemoryNode]) -> None:
         self.nodes.extend(nodes)
@@ -149,9 +149,7 @@ class VectorStore:
         return store
 
     @classmethod
-    def from_backend(
-        cls, backend: StorageBackend, store_name: str
-    ) -> VectorStore:
+    def from_backend(cls, backend: StorageBackend, store_name: str) -> VectorStore:
         """Load a VectorStore from a StorageBackend."""
         nodes = backend.get_all_nodes(store_name)
         return cls(nodes=nodes, backend=backend, store_name=store_name)

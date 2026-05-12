@@ -14,9 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 # A1: externalize temporal window — override via IMI_TEMPORAL_WINDOW_HOURS
-DEFAULT_TEMPORAL_WINDOW_HOURS: float = float(
-    os.getenv("IMI_TEMPORAL_WINDOW_HOURS", "1.0")
-)
+DEFAULT_TEMPORAL_WINDOW_HOURS: float = float(os.getenv("IMI_TEMPORAL_WINDOW_HOURS", "1.0"))
 
 
 @dataclass
@@ -130,16 +128,12 @@ class TemporalIndex:
 
     def search_by_session(self, session_id: str) -> list[str]:
         """Find all memories from a specific session."""
-        return [
-            nid for nid, ctx in self.contexts.items()
-            if ctx.session_id == session_id
-        ]
+        return [nid for nid, ctx in self.contexts.items() if ctx.session_id == session_id]
 
     def get_timeline(self, node_ids: list[str] | None = None) -> list[tuple[str, TemporalContext]]:
         """Get chronologically ordered timeline."""
         items = [
-            (nid, ctx) for nid, ctx in self.contexts.items()
-            if node_ids is None or nid in node_ids
+            (nid, ctx) for nid, ctx in self.contexts.items() if node_ids is None or nid in node_ids
         ]
         items.sort(key=lambda x: x[1].timestamp)
         return items

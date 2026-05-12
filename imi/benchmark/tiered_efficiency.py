@@ -2,16 +2,17 @@
 
 Core hypothesis: L0+L1 should use <=200 tokens for >=90% of cases.
 """
+
 from __future__ import annotations
+
 import time
 from dataclasses import dataclass
-from typing import Any
 
 import numpy as np
 
-from ..node import MemoryNode, AffectiveTag
-from ..store import VectorStore
 from ..embedder import SentenceTransformerEmbedder
+from ..node import AffectiveTag, MemoryNode
+from ..store import VectorStore
 from ..tiering import L0Identity, generate_l1
 from .ambench import generate_incidents
 
@@ -23,8 +24,8 @@ class TieredEfficiencyResults:
     l0_l1_tokens: int = 0
     l2_avg_tokens: float = 0.0
     l3_avg_tokens: float = 0.0
-    pct_under_200: float = 0.0    # % of L0+L1 generations under 200 tokens
-    pct_under_500: float = 0.0    # % of L2 retrievals under 500 tokens
+    pct_under_200: float = 0.0  # % of L0+L1 generations under 200 tokens
+    pct_under_500: float = 0.0  # % of L2 retrievals under 500 tokens
     n_sessions: int = 0
     duration_s: float = 0.0
     system_name: str = "IMI"
@@ -61,7 +62,14 @@ class TieredEfficiencyResults:
 class TieredEfficiency:
     """Benchmark: token economy across tiers."""
 
-    def __init__(self, n_incidents: int = 300, n_days: int = 90, seed: int = 42, n_sessions: int = 50, embedder=None):
+    def __init__(
+        self,
+        n_incidents: int = 300,
+        n_days: int = 90,
+        seed: int = 42,
+        n_sessions: int = 50,
+        embedder=None,
+    ):
         self.n_incidents = n_incidents
         self.n_days = n_days
         self.seed = seed
@@ -121,7 +129,8 @@ class TieredEfficiency:
             # L3: full search (top-20, detailed summaries + seeds)
             l3_results = store.search(query_emb, top_k=20, relevance_weight=0.1)
             l3_text = "\n".join(
-                f"{n.summary_detailed}\n{n.seed}" for n, _ in l3_results
+                f"{n.summary_detailed}\n{n.seed}"
+                for n, _ in l3_results
                 if n.summary_detailed or n.seed
             )
             l3_tokens_list.append(len(l3_text) // 4)

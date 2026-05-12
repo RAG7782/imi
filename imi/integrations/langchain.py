@@ -71,6 +71,7 @@ class IMIMemory:
         """
         if space is None:
             from imi.space import IMISpace
+
             space = IMISpace()
         self._space = space
         self.memory_key = memory_key
@@ -151,6 +152,7 @@ class IMIMemory:
     def clear(self) -> None:
         """Clear all memories (creates fresh stores)."""
         from imi.store import VectorStore
+
         self._space.episodic = VectorStore()
         self._space.semantic = VectorStore()
         if self._space.persist_dir:

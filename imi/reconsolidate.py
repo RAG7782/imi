@@ -34,10 +34,10 @@ class ReconsolidationEvent:
 
     node_id: str
     timestamp: float
-    context: str              # what context triggered the reconsolidation
-    changes: list[str]        # what changed
-    previous_orbital: str     # snapshot before reconsolidation
-    new_orbital: str          # snapshot after
+    context: str  # what context triggered the reconsolidation
+    changes: list[str]  # what changed
+    previous_orbital: str  # snapshot before reconsolidation
+    new_orbital: str  # snapshot after
 
     def __str__(self) -> str:
         return (
@@ -75,8 +75,8 @@ def reconsolidate(
     relevance_check = llm.generate(
         system=(
             "You decide if a memory should be updated based on new context. "
-            "Answer with JSON: {\"should_update\": true/false, \"reason\": \"...\", "
-            "\"new_framing\": \"...\"}\n"
+            'Answer with JSON: {"should_update": true/false, "reason": "...", '
+            '"new_framing": "..."}\n'
             "Only update if the new context genuinely adds insight or reframes the memory. "
             "Do NOT update if the context is unrelated."
         ),
@@ -89,8 +89,11 @@ def reconsolidate(
     )
 
     import json
+
     try:
-        data = json.loads(relevance_check.strip().removeprefix("```json").removesuffix("```").strip())
+        data = json.loads(
+            relevance_check.strip().removeprefix("```json").removesuffix("```").strip()
+        )
     except json.JSONDecodeError:
         return None
 

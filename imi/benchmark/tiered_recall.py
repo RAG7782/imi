@@ -4,28 +4,28 @@ Tests whether the L0-L3 tiering VIEW preserves retrieval quality
 while reducing token cost. Core hypothesis: L0+L1 should handle
 >=90% of queries that full access handles correctly.
 """
+
 from __future__ import annotations
+
 import time
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
 
-import numpy as np
-
-from ..node import MemoryNode, AffectiveTag
-from ..store import VectorStore
 from ..embedder import SentenceTransformerEmbedder
-from ..tiering import generate_l1, compute_tier, apply_tiering
+from ..node import AffectiveTag, MemoryNode
+from ..store import VectorStore
+from ..tiering import generate_l1
 from .ambench import generate_incidents, recall_at_k
 
 
 @dataclass
 class TieredRecallResults:
     """Results from tiered recall benchmark."""
-    full_r5: float = 0.0          # Recall@5 with full access (baseline)
-    l1_coverage: float = 0.0      # % of queries answerable from L1 facts alone
-    l2_r5: float = 0.0            # Recall@5 with L2 filtered search
-    l3_r5: float = 0.0            # Recall@5 with L3 deep search (=full)
-    tier_ratio: float = 0.0       # l1_coverage / full_r5 (target: >=0.90)
+
+    full_r5: float = 0.0  # Recall@5 with full access (baseline)
+    l1_coverage: float = 0.0  # % of queries answerable from L1 facts alone
+    l2_r5: float = 0.0  # Recall@5 with L2 filtered search
+    l3_r5: float = 0.0  # Recall@5 with L3 deep search (=full)
+    tier_ratio: float = 0.0  # l1_coverage / full_r5 (target: >=0.90)
     n_queries: int = 0
     duration_s: float = 0.0
     system_name: str = "IMI"
@@ -65,7 +65,9 @@ class TieredRecall:
         self.embedder = embedder or SentenceTransformerEmbedder()
         self.incidents = generate_incidents(n_incidents, n_days, seed)
 
-    def run(self, system_name: str = "IMI", relevance_weight: float = 0.10, eval_every: int = 30) -> TieredRecallResults:
+    def run(
+        self, system_name: str = "IMI", relevance_weight: float = 0.10, eval_every: int = 30
+    ) -> TieredRecallResults:
         t0 = time.time()
         store = VectorStore()
         ground_truth = {}
@@ -108,7 +110,9 @@ class TieredRecall:
 
                 # L2: filtered search (only nodes with matching tags or high relevance)
                 # Simulate by searching with higher relevance_weight (prioritizes relevant nodes)
-                l2_results = store.search(query_emb, top_k=5, relevance_weight=min(0.3, relevance_weight * 3))
+                l2_results = store.search(
+                    query_emb, top_k=5, relevance_weight=min(0.3, relevance_weight * 3)
+                )
                 l2_patterns = [n.tags[0] if n.tags else "" for n, _ in l2_results]
                 r5_l2 = recall_at_k(l2_patterns, target, k=5)
 

@@ -1,4 +1,5 @@
 """Tests for L0-L3 tiering."""
+
 import numpy as np
 
 from imi.affect import AffectiveTag

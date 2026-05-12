@@ -41,9 +41,11 @@ _IMI_DB = _HOME / "experimentos/tools/imi/imi_memory.db"
 
 # ── Tipos de análise ─────────────────────────────────────────────────────────
 
+
 @dataclass
 class NodeWorth:
     """Perfil de MemoryWorth para um único nó."""
+
     node_id: str
     store: str
     salience: float
@@ -89,11 +91,12 @@ class NodeWorth:
 @dataclass
 class WorthReport:
     """Relatório agregado de MemoryWorth para um espaço de memória."""
+
     total_nodes: int = 0
-    high_count: int = 0       # salience >= 0.8
-    medium_count: int = 0     # 0.6 <= salience < 0.8
-    low_count: int = 0        # 0.4 <= salience < 0.6
-    at_risk_count: int = 0    # salience < 0.4
+    high_count: int = 0  # salience >= 0.8
+    medium_count: int = 0  # 0.6 <= salience < 0.8
+    low_count: int = 0  # 0.4 <= salience < 0.6
+    at_risk_count: int = 0  # salience < 0.4
     zero_access_count: int = 0  # nenhum acesso registrado
     mean_salience: float = 0.0
     median_salience: float = 0.0
@@ -101,6 +104,7 @@ class WorthReport:
 
 
 # ── Leitura do DB ─────────────────────────────────────────────────────────────
+
 
 def _iter_nodes(db_path: Path = _IMI_DB) -> Iterator[tuple[str, str, dict]]:
     """Itera nós vivos (versão mais recente, não-deletados) do IMI SQLite.
@@ -177,6 +181,7 @@ def _extract_worth(node_id: str, store: str, data: dict) -> NodeWorth:
 
 # ── Análise ───────────────────────────────────────────────────────────────────
 
+
 def analyze(db_path: Path = _IMI_DB, max_at_risk: int = 10) -> WorthReport:
     """Analisa distribuição de MemoryWorth de todos os nós.
 
@@ -214,8 +219,7 @@ def analyze(db_path: Path = _IMI_DB, max_at_risk: int = 10) -> WorthReport:
         sorted_s = sorted(saliences)
         mid = len(sorted_s) // 2
         report.median_salience = (
-            sorted_s[mid] if len(sorted_s) % 2 == 1
-            else (sorted_s[mid - 1] + sorted_s[mid]) / 2
+            sorted_s[mid] if len(sorted_s) % 2 == 1 else (sorted_s[mid - 1] + sorted_s[mid]) / 2
         )
 
     report.nodes_at_risk = at_risk_nodes
@@ -223,6 +227,7 @@ def analyze(db_path: Path = _IMI_DB, max_at_risk: int = 10) -> WorthReport:
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
+
 
 def _print_report(report: WorthReport) -> None:
     print("=" * 60)
@@ -246,8 +251,7 @@ def _print_report(report: WorthReport) -> None:
         for nw in report.nodes_at_risk:
             tags_str = ", ".join(nw.tags[:3]) or "sem tags"
             print(
-                f"    [{nw.node_id}] sal={nw.salience:.2f} "
-                f"acc={nw.access_count} tags=[{tags_str}]"
+                f"    [{nw.node_id}] sal={nw.salience:.2f} acc={nw.access_count} tags=[{tags_str}]"
             )
             print(f"      {nw.summary[:60]}...")
     print("=" * 60)
@@ -260,20 +264,22 @@ def main() -> None:
         description="MemoryWorth — análise de salience dinâmica do IMI (S06)"
     )
     parser.add_argument(
-        "--db", type=Path, default=_IMI_DB,
-        help=f"Path do DB SQLite (default: {_IMI_DB})"
+        "--db", type=Path, default=_IMI_DB, help=f"Path do DB SQLite (default: {_IMI_DB})"
     )
     parser.add_argument(
-        "--report", action="store_true", default=True,
-        help="Exibir relatório de distribuição (default: True)"
+        "--report",
+        action="store_true",
+        default=True,
+        help="Exibir relatório de distribuição (default: True)",
     )
     parser.add_argument(
-        "--json", action="store_true",
-        help="Output como JSON (para integração programática)"
+        "--json", action="store_true", help="Output como JSON (para integração programática)"
     )
     parser.add_argument(
-        "--at-risk-limit", type=int, default=10,
-        help="Máximo de nós AT_RISK no relatório (default: 10)"
+        "--at-risk-limit",
+        type=int,
+        default=10,
+        help="Máximo de nós AT_RISK no relatório (default: 10)",
     )
     args = parser.parse_args()
 
@@ -284,29 +290,35 @@ def main() -> None:
         sys.exit(1)
 
     if args.json:
-        print(json.dumps({
-            "total_nodes": report.total_nodes,
-            "mean_salience": round(report.mean_salience, 4),
-            "median_salience": round(report.median_salience, 4),
-            "distribution": {
-                "HIGH": report.high_count,
-                "MEDIUM": report.medium_count,
-                "LOW": report.low_count,
-                "AT_RISK": report.at_risk_count,
-            },
-            "zero_access_count": report.zero_access_count,
-            "nodes_at_risk": [
+        print(
+            json.dumps(
                 {
-                    "id": nw.node_id,
-                    "salience": nw.salience,
-                    "access_count": nw.access_count,
-                    "tags": nw.tags,
-                    "summary": nw.summary,
-                    "projected_after_positive": round(nw.projected_after_positive, 4),
-                }
-                for nw in report.nodes_at_risk
-            ],
-        }, ensure_ascii=False, indent=2))
+                    "total_nodes": report.total_nodes,
+                    "mean_salience": round(report.mean_salience, 4),
+                    "median_salience": round(report.median_salience, 4),
+                    "distribution": {
+                        "HIGH": report.high_count,
+                        "MEDIUM": report.medium_count,
+                        "LOW": report.low_count,
+                        "AT_RISK": report.at_risk_count,
+                    },
+                    "zero_access_count": report.zero_access_count,
+                    "nodes_at_risk": [
+                        {
+                            "id": nw.node_id,
+                            "salience": nw.salience,
+                            "access_count": nw.access_count,
+                            "tags": nw.tags,
+                            "summary": nw.summary,
+                            "projected_after_positive": round(nw.projected_after_positive, 4),
+                        }
+                        for nw in report.nodes_at_risk
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
     else:
         _print_report(report)
 

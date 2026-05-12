@@ -19,12 +19,13 @@ Uso (drop-in):
 Ref: autosave/policy.py + autosave/triggers.py (Synapse Layer — padrão adaptado)
      Camada 3 do plano de integração Synapse Layer → ecossistema AIP
 """
+
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 import time
-import logging
 from typing import Any
 
 from .fcm_bridge import FCMBridge
@@ -35,21 +36,21 @@ logger = logging.getLogger("imi.fcm_security")
 # ─── TriggerDetector (padrão Synapse autosave/triggers.py) ────────────────
 
 _ALERT_PATTERN = re.compile(
-    r'\b(crash(?:ed)?|error|breach|falhou|crítico|urgent[e]?|emergência|exception|'
-    r'traceback|timeout|offline|down|security|broke|failed|CRITICAL|crashed)\b',
-    re.IGNORECASE
+    r"\b(crash(?:ed)?|error|breach|falhou|crítico|urgent[e]?|emergência|exception|"
+    r"traceback|timeout|offline|down|security|broke|failed|CRITICAL|crashed)\b",
+    re.IGNORECASE,
 )
 
 _MILESTONE_PATTERN = re.compile(
-    r'\b(deployed|launched|publicado|lançado|entregue|concluí|'
-    r'first.user|go.live|em.produção|milestone|100\%|complete[d]?)\b',
-    re.IGNORECASE
+    r"\b(deployed|launched|publicado|lançado|entregue|concluí|"
+    r"first.user|go.live|em.produção|milestone|100\%|complete[d]?)\b",
+    re.IGNORECASE,
 )
 
 _DECISION_PATTERN = re.compile(
-    r'\b(decidiu|decisão|decided|pivot|commit|arquitetura|'
-    r'vamos.usar|adotar|escolhemos|migrando.para|deprecated|ADR)\b',
-    re.IGNORECASE
+    r"\b(decidiu|decisão|decided|pivot|commit|arquitetura|"
+    r"vamos.usar|adotar|escolhemos|migrando.para|deprecated|ADR)\b",
+    re.IGNORECASE,
 )
 
 
@@ -78,12 +79,13 @@ def _classify_importance(content: str) -> int:
 
 def _content_hash(content: str, source: str = "") -> str:
     """SHA-256 do conteúdo normalizado (lowercase, whitespace colapsado)."""
-    normalized = re.sub(r'\s+', ' ', content.lower().strip())
+    normalized = re.sub(r"\s+", " ", content.lower().strip())
     payload = f"{source}:{normalized}"
     return hashlib.sha256(payload.encode()).hexdigest()[:32]
 
 
 # ─── SecureFCMBridge ──────────────────────────────────────────────────────
+
 
 class SecureFCMBridge(FCMBridge):
     """
@@ -158,7 +160,8 @@ class SecureFCMBridge(FCMBridge):
         if importance < self.min_importance:
             logger.debug(
                 "fcm_security: evento bloqueado por importância (%d < %d)",
-                importance, self.min_importance
+                importance,
+                self.min_importance,
             )
             return None
 
@@ -176,6 +179,7 @@ class SecureFCMBridge(FCMBridge):
         if result:
             logger.debug(
                 "fcm_security: evento federado (importance=%d, categoria=%s)",
-                importance, category_tag or "normal"
+                importance,
+                category_tag or "normal",
             )
         return result

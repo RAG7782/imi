@@ -15,7 +15,6 @@ Based on: Edelsbrunner & Harer (2010), ripser (Bauer, 2021).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
 
 import numpy as np
 
@@ -24,7 +23,7 @@ import numpy as np
 class PersistenceFeature:
     """A topological feature with birth and death times."""
 
-    dimension: int      # 0 = component, 1 = loop, 2 = void
+    dimension: int  # 0 = component, 1 = loop, 2 = void
     birth: float
     death: float
 
@@ -45,16 +44,16 @@ class TDAReport:
     """Full topological analysis of the memory space."""
 
     # Betti numbers (counts of features per dimension)
-    betti_0: int = 0          # connected components
-    betti_1: int = 0          # loops
-    betti_2: int = 0          # voids/cavities
+    betti_0: int = 0  # connected components
+    betti_1: int = 0  # loops
+    betti_2: int = 0  # voids/cavities
 
     # Persistence features
     features: list[PersistenceFeature] = field(default_factory=list)
 
     # Diagnostic interpretation
-    fragmentation: float = 0.0      # 0 = fully connected, 1 = fully fragmented
-    rumination_risk: float = 0.0    # 0 = no loops, 1 = many persistent loops
+    fragmentation: float = 0.0  # 0 = fully connected, 1 = fully fragmented
+    rumination_risk: float = 0.0  # 0 = no loops, 1 = many persistent loops
     structural_stability: float = 0.0  # avg persistence of significant features
 
     # Raw persistence diagrams (for visualization)
@@ -63,7 +62,8 @@ class TDAReport:
     def __str__(self) -> str:
         lines = [
             "TDA Report:",
-            f"  Betti numbers: H0={self.betti_0} (components), H1={self.betti_1} (loops), H2={self.betti_2} (voids)",
+            f"  Betti numbers: H0={self.betti_0} (components), "
+            f"H1={self.betti_1} (loops), H2={self.betti_2} (voids)",
             f"  Fragmentation:  {self.fragmentation:.0%}",
             f"  Rumination risk: {self.rumination_risk:.0%}",
             f"  Stability:       {self.structural_stability:.2f}",
@@ -126,9 +126,7 @@ def compute_persistent_homology(
 
         # Stability: average persistence of significant features
         significant = [f for f in features if f.persistence > 0.05 and not np.isinf(f.persistence)]
-        structural_stability = (
-            np.mean([f.persistence for f in significant]) if significant else 0.0
-        )
+        structural_stability = np.mean([f.persistence for f in significant]) if significant else 0.0
 
         return TDAReport(
             betti_0=betti[0],
@@ -225,6 +223,7 @@ def compute_space_energy(
         return 0.0
 
     from sklearn.metrics import pairwise_distances
+
     dists = pairwise_distances(embeddings, metric="cosine")
 
     # Weighted by mass product (massive nodes closer together = lower energy)

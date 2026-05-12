@@ -9,7 +9,7 @@ Everything else in IMI is elaboration on this single idea.
 
 from __future__ import annotations
 
-from imi.llm import LLMAdapter, ClaudeLLM, ClaudeCodeLLM, OllamaLLM, create_llm_from_env
+from imi.llm import LLMAdapter, create_llm_from_env
 
 # ---------------------------------------------------------------------------
 # Default LLM (lazy singleton)
@@ -103,8 +103,7 @@ def remember(
     if context:
         prompt_parts.append(f"\nCURRENT CONTEXT:\n{context}")
     prompt_parts.append(
-        "\nReconstruct this memory. Be faithful to the seed, "
-        "use the context to frame relevance."
+        "\nReconstruct this memory. Be faithful to the seed, use the context to frame relevance."
     )
     return llm.generate(
         system=REMEMBER_SYSTEM,

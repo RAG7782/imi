@@ -108,7 +108,8 @@ class TestMemoryGraph:
 
         # Search for node[0] should also surface node[5] via graph
         results = g.search_with_expansion(
-            store, nodes[0].embedding, top_k=5, hops=1, graph_weight=0.3)
+            store, nodes[0].embedding, top_k=5, hops=1, graph_weight=0.3
+        )
         ids = [n.id for n, s in results]
         assert nodes[0].id in ids
 

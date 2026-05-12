@@ -1,8 +1,8 @@
 """Tests for expanded benchmark suite."""
-import pytest
-from imi.benchmark.tiered_recall import TieredRecall
-from imi.benchmark.tiered_efficiency import TieredEfficiency
+
 from imi.benchmark.cross_session import CrossSession
+from imi.benchmark.tiered_efficiency import TieredEfficiency
+from imi.benchmark.tiered_recall import TieredRecall
 
 
 class TestTieredRecall:

@@ -18,28 +18,29 @@ from typing import Any
 import numpy as np
 
 from imi.adaptive import AdaptiveRW
+from imi.affect import assess_affect
+from imi.affordance import extract_affordances
+from imi.anchors import Anchor, compute_confidence, extract_anchors
 from imi.cache import wrap_with_cache
-from imi.search import HYBRID_SCORER_ENABLED, hybrid_score
-from imi.affect import AffectiveTag, assess_affect
-from imi.affordance import Affordance, extract_affordances
-from imi.anchors import Anchor, ConfidenceReport, extract_anchors, compute_confidence
 from imi.causal import auto_link_causal
-from imi.core import compress_seed, remember, summarize, get_llm
-from imi.positional import positional_reorder
+from imi.core import compress_seed, get_llm, remember, summarize
 from imi.embedder import Embedder, create_embedder_from_env
 from imi.events import NAVIGATE_ACCESS, MemoryEvent
 from imi.graph import MemoryGraph
 from imi.llm import LLMAdapter
 from imi.maintain import MaintenanceReport, run_maintenance
 from imi.node import MemoryNode
+from imi.positional import positional_reorder
 from imi.reconsolidate import ReconsolidationEvent, reconsolidate
+from imi.search import HYBRID_SCORER_ENABLED, hybrid_score
 from imi.spatial import SpatialIndex, TopologyReport
 from imi.storage import SQLiteBackend, StorageBackend
 from imi.store import VectorStore
 from imi.surprise import SurpriseResult, encode_with_surprise, reconstruct_from_surprise
-from imi.tda import TDAReport, AnnealingState, compute_persistent_homology, compute_space_energy
+from imi.tda import AnnealingState, TDAReport, compute_persistent_homology, compute_space_energy
 from imi.temporal import TemporalContext, TemporalIndex
-from imi.tiering import L0Identity, L1HotFacts, generate_l1, apply_tiering, get_tier_stats
+from imi.tiering import L0Identity, L1HotFacts, apply_tiering, generate_l1, get_tier_stats
+
 # L3 fix: removed duplicate import of positional_reorder
 
 
@@ -62,12 +63,17 @@ class NavigationResult:
     tda: TDAReport | None = None
 
     def __str__(self) -> str:
-        lines = [f"[Navigate: zoom={self.zoom.value}, hits={len(self.memories)}, ~{self.total_tokens_approx} tokens]"]
+        lines = [
+            f"[Navigate: zoom={self.zoom.value}, hits={len(self.memories)}, "
+            f"~{self.total_tokens_approx} tokens]"
+        ]
         for m in self.memories:
             store = m.get("store", "?")
             surprise = f" S={m['surprise']:.0%}" if "surprise" in m else ""
             affect_str = f" A={m.get('affect_str', '')}" if m.get("affect_str") else ""
-            lines.append(f"  [{m['score']:.2f}] [{store}]{surprise}{affect_str} {m['content'][:100]}")
+            lines.append(
+                f"  [{m['score']:.2f}] [{store}]{surprise}{affect_str} {m['content'][:100]}"
+            )
         if self.tda:
             lines.append(f"\n{self.tda}")
         elif self.topology:
@@ -244,7 +250,8 @@ class IMISpace:
         node.temporal = temporal
 
         # 9b. SDE-AAAK Dialect: entities, DS-d score, tag
-        from .dialect import extract_entities, compute_ds_d, format_tag
+        from .dialect import compute_ds_d, extract_entities, format_tag
+
         node.entities = extract_entities(experience)
         try:
             node.ds_d = compute_ds_d(seed, self.embedder)
@@ -263,8 +270,12 @@ class IMISpace:
         # 10. Auto-link graph edges (similarity-based, zero LLM calls)
         if len(self.episodic) > 5:
             auto_link_causal(
-                node, self.episodic, self.graph,
-                threshold=0.65, max_edges=2, llm=None,
+                node,
+                self.episodic,
+                self.graph,
+                threshold=0.65,
+                max_edges=2,
+                llm=None,
             )
 
         if self.persist_dir or self.backend:
@@ -312,7 +323,9 @@ class IMISpace:
         # Graph-augmented search if graph has edges
         if use_graph and self.graph.stats()["total_edges"] > 0:
             episodic_results = self.graph.search_with_expansion(
-                self.episodic, query_emb, top_k=top_k,
+                self.episodic,
+                query_emb,
+                top_k=top_k,
                 relevance_weight=relevance_weight,
                 graph_weight=graph_weight,
             )
@@ -333,8 +346,7 @@ class IMISpace:
         if HYBRID_SCORER_ENABLED:
             query_tags = {t.lower() for t in (context or "").split() if len(t) > 2}
             all_results = [
-                (node, hybrid_score(node, query_emb, query_tags))
-                for node, _legacy in all_results
+                (node, hybrid_score(node, query_emb, query_tags)) for node, _legacy in all_results
             ]
 
         # A1 — Temporal Validity: apply exponential decay for expired memories.
@@ -344,6 +356,7 @@ class IMISpace:
         for node, score in all_results:
             if node.valid_until is not None and node.valid_until < _now:
                 import math
+
                 days_past = (_now - node.valid_until) / 86400
                 score = score * math.exp(-0.5 * days_past)
             decayed.append((node, score))
@@ -389,9 +402,7 @@ class IMISpace:
                             magnitude=node.surprise_magnitude,
                             surprise_elements=node.surprise_elements,
                         )
-                        content = reconstruct_from_surprise(
-                            sr, context or query, self._llm()
-                        )
+                        content = reconstruct_from_surprise(sr, context or query, self._llm())
                     else:
                         content = remember(node.seed, context or query, llm=self._llm())
                     tok_est = 200
@@ -435,17 +446,19 @@ class IMISpace:
 
         # Emit batched navigate event
         if self.backend and memories:
-            self.backend.log_event(MemoryEvent(
-                event_type=NAVIGATE_ACCESS,
-                node_id="*",
-                store_name="episodic",
-                metadata={
-                    "query": query[:200],
-                    "zoom": zoom.value,
-                    "node_ids": [m["id"] for m in memories],
-                    "top_score": memories[0]["score"] if memories else 0,
-                },
-            ))
+            self.backend.log_event(
+                MemoryEvent(
+                    event_type=NAVIGATE_ACCESS,
+                    node_id="*",
+                    store_name="episodic",
+                    metadata={
+                        "query": query[:200],
+                        "zoom": zoom.value,
+                        "node_ids": [m["id"] for m in memories],
+                        "top_score": memories[0]["score"] if memories else 0,
+                    },
+                )
+            )
 
         # H1 fix: removed duplicate positional_reorder call
 
@@ -492,20 +505,22 @@ class IMISpace:
                 content = node.summary_detailed
                 tok_est = 100
 
-            memories.append({
-                "id": node.id,
-                "content": content,
-                "score": 1.0 / (1.0 + dist_hours),
-                "relevance": node.relevance,
-                "created_at": node.created_at,
-                "tags": node.tags,
-                "store": "episodic",
-                "temporal_distance_hours": dist_hours,
-                "surprise": node.surprise_magnitude,
-                "affect_str": str(node.affect),
-                "mass": node.mass,
-                "affordances": [str(a) for a in node.affordances],
-            })
+            memories.append(
+                {
+                    "id": node.id,
+                    "content": content,
+                    "score": 1.0 / (1.0 + dist_hours),
+                    "relevance": node.relevance,
+                    "created_at": node.created_at,
+                    "tags": node.tags,
+                    "store": "episodic",
+                    "temporal_distance_hours": dist_hours,
+                    "surprise": node.surprise_magnitude,
+                    "affect_str": str(node.affect),
+                    "mass": node.mass,
+                    "affordances": [str(a) for a in node.affordances],
+                }
+            )
             total_tokens += tok_est
 
         return NavigationResult(
@@ -528,15 +543,17 @@ class IMISpace:
             for aff in node.affordances:
                 aff_emb = self.embedder.embed(aff.action)
                 sim = float(np.dot(query_emb, aff_emb))
-                results.append({
-                    "node_id": node.id,
-                    "affordance": str(aff),
-                    "action": aff.action,
-                    "confidence": aff.confidence,
-                    "conditions": aff.conditions,
-                    "similarity": sim,
-                    "memory_summary": node.summary_medium,
-                })
+                results.append(
+                    {
+                        "node_id": node.id,
+                        "affordance": str(aff),
+                        "action": aff.action,
+                        "confidence": aff.confidence,
+                        "conditions": aff.conditions,
+                        "similarity": sim,
+                        "memory_summary": node.summary_medium,
+                    }
+                )
 
         results.sort(key=lambda x: x["similarity"] * x["confidence"], reverse=True)
         return results[:top_k]
@@ -601,8 +618,7 @@ class IMISpace:
 
     def save(self, path: str | Path | None = None) -> None:
         anchors_data = {
-            nid: [a.to_dict() for a in anchors]
-            for nid, anchors in self._anchors.items()
+            nid: [a.to_dict() for a in anchors] for nid, anchors in self._anchors.items()
         }
 
         if self.backend:
@@ -613,7 +629,7 @@ class IMISpace:
             self.backend.put_anchors(anchors_data)
             self.backend.put_temporal(self.temporal_index.contexts)
             # H12: persist reconsolidation_log alongside graph
-            if hasattr(self.backend, 'db_path'):
+            if hasattr(self.backend, "db_path"):
                 graph_path = Path(self.backend.db_path).with_suffix(".graph.json")
                 graph_data = {
                     "edges": self.graph.to_dict(),
@@ -627,7 +643,9 @@ class IMISpace:
                             "new_orbital": e.new_orbital,
                         }
                         for e in self.reconsolidation_log[-100:]  # keep last 100
-                    ] if self.reconsolidation_log else [],
+                    ]
+                    if self.reconsolidation_log
+                    else [],
                     "annealing": {
                         "iteration": self.annealing.iteration,
                         "temperature": self.annealing.temperature,
@@ -635,9 +653,7 @@ class IMISpace:
                         "converged": self.annealing.converged,
                     },
                 }
-                graph_path.write_text(
-                    _json.dumps(graph_data, ensure_ascii=False, indent=2)
-                )
+                graph_path.write_text(_json.dumps(graph_data, ensure_ascii=False, indent=2))
             return
 
         d = Path(path or self.persist_dir or "imi_data")
@@ -645,16 +661,10 @@ class IMISpace:
         self.episodic.save(d / "episodic.json")
         self.semantic.save(d / "semantic.json")
 
-        (d / "anchors.json").write_text(
-            _json.dumps(anchors_data, ensure_ascii=False, indent=2)
-        )
+        (d / "anchors.json").write_text(_json.dumps(anchors_data, ensure_ascii=False, indent=2))
 
-        temporal_data = {
-            nid: ctx.to_dict() for nid, ctx in self.temporal_index.contexts.items()
-        }
-        (d / "temporal.json").write_text(
-            _json.dumps(temporal_data, ensure_ascii=False, indent=2)
-        )
+        temporal_data = {nid: ctx.to_dict() for nid, ctx in self.temporal_index.contexts.items()}
+        (d / "temporal.json").write_text(_json.dumps(temporal_data, ensure_ascii=False, indent=2))
 
         # Save graph edges
         (d / "graph.json").write_text(
@@ -709,7 +719,7 @@ class IMISpace:
         graph = MemoryGraph()
         reconsolidation_log = []
         annealing_state = None
-        if hasattr(backend, 'db_path'):
+        if hasattr(backend, "db_path"):
             graph_path = Path(backend.db_path).with_suffix(".graph.json")
             if graph_path.exists():
                 data = _json.loads(graph_path.read_text())
@@ -718,20 +728,22 @@ class IMISpace:
                     graph = MemoryGraph.from_dict(data["edges"])
                     for entry in data.get("reconsolidation_log", []):
                         try:
-                            reconsolidation_log.append(ReconsolidationEvent(
-                                node_id=entry["node_id"],
-                                timestamp=entry["timestamp"],
-                                context=entry.get("context", ""),
-                                changes=list(entry.get("changes", [])),
-                                previous_orbital=entry.get(
-                                    "previous_orbital",
-                                    entry.get("old_value", ""),
-                                ),
-                                new_orbital=entry.get(
-                                    "new_orbital",
-                                    entry.get("new_value", ""),
-                                ),
-                            ))
+                            reconsolidation_log.append(
+                                ReconsolidationEvent(
+                                    node_id=entry["node_id"],
+                                    timestamp=entry["timestamp"],
+                                    context=entry.get("context", ""),
+                                    changes=list(entry.get("changes", [])),
+                                    previous_orbital=entry.get(
+                                        "previous_orbital",
+                                        entry.get("old_value", ""),
+                                    ),
+                                    new_orbital=entry.get(
+                                        "new_orbital",
+                                        entry.get("new_value", ""),
+                                    ),
+                                )
+                            )
                         except (KeyError, TypeError, ValueError):
                             continue
                     annealing_state = data.get("annealing")
@@ -780,8 +792,16 @@ class IMISpace:
         llm: LLMAdapter | None = None,
     ) -> IMISpace:
         d = Path(path)
-        episodic = VectorStore.load(d / "episodic.json") if (d / "episodic.json").exists() else VectorStore()
-        semantic = VectorStore.load(d / "semantic.json") if (d / "semantic.json").exists() else VectorStore()
+        episodic = (
+            VectorStore.load(d / "episodic.json")
+            if (d / "episodic.json").exists()
+            else VectorStore()
+        )
+        semantic = (
+            VectorStore.load(d / "semantic.json")
+            if (d / "semantic.json").exists()
+            else VectorStore()
+        )
 
         anchors = {}
         if (d / "anchors.json").exists():
@@ -822,9 +842,9 @@ class IMISpace:
             "semantic_total": len(sem_nodes),
             "anchored_memories": len(self._anchors),
             "total_anchors": sum(len(a) for a in self._anchors.values()),
-            "temporal_sessions": len(set(
-                c.session_id for c in self.temporal_index.contexts.values()
-            )),
+            "temporal_sessions": len(
+                set(c.session_id for c in self.temporal_index.contexts.values())
+            ),
             "total_affordances": sum(len(n.affordances) for n in ep_nodes + sem_nodes),
             "reconsolidations": len(self.reconsolidation_log),
             "annealing": str(self.annealing),
@@ -863,7 +883,8 @@ class IMISpace:
             force_refresh
             or self._l1_cache is None
             or domain_filter != self._l1_domain
-            or (time.time() - (self._l1_cache.generated_at if self._l1_cache else 0)) > 300  # 5 min TTL
+            or (time.time() - (self._l1_cache.generated_at if self._l1_cache else 0))
+            > 300  # 5 min TTL
         )
 
         if needs_refresh:

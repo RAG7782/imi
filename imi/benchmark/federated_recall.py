@@ -32,13 +32,14 @@ from .ambench import generate_incidents, recall_at_k
 @dataclass
 class FederatedRecallResults:
     """Results from federated recall benchmark."""
-    isolated_r5: float = 0.0        # Recall@5 without federation
-    federated_r5: float = 0.0       # Recall@5 with federation
-    federation_boost: float = 0.0   # federated_r5 - isolated_r5
-    overlap_pct: float = 0.0        # Actual overlap percentage
-    n_store_a: int = 0              # Incidents in store A
-    n_store_b: int = 0              # Incidents in store B (before federation)
-    n_federated: int = 0            # Incidents federated from A to B
+
+    isolated_r5: float = 0.0  # Recall@5 without federation
+    federated_r5: float = 0.0  # Recall@5 with federation
+    federation_boost: float = 0.0  # federated_r5 - isolated_r5
+    overlap_pct: float = 0.0  # Actual overlap percentage
+    n_store_a: int = 0  # Incidents in store A
+    n_store_b: int = 0  # Incidents in store B (before federation)
+    n_federated: int = 0  # Incidents federated from A to B
     n_queries: int = 0
     duration_s: float = 0.0
     system_name: str = "IMI"
@@ -65,7 +66,8 @@ class FederatedRecallResults:
             f"  Federated R@5:     {self.federated_r5:.3f}\n"
             f"  Federation Boost:  {self.federation_boost:+.3f} {check}\n"
             f"  Overlap:           {self.overlap_pct:.1%}\n"
-            f"  Store A: {self.n_store_a} | Store B: {self.n_store_b} | Federated: {self.n_federated}\n"
+            f"  Store A: {self.n_store_a} | Store B: {self.n_store_b} | "
+            f"Federated: {self.n_federated}\n"
             f"  Queries: {self.n_queries} | Duration: {self.duration_s:.1f}s"
         )
 
@@ -123,10 +125,9 @@ class FederatedRecall:
 
         # Assign: first 60% to A, last 60% to B (middle 20% overlaps)
         indices_a = set(all_indices[:n_per_store].tolist())
-        indices_b = set(all_indices[n - n_per_store:].tolist())
+        indices_b = set(all_indices[n - n_per_store :].tolist())
         overlap = indices_a & indices_b
         a_only = indices_a - overlap
-        b_only = indices_b - overlap
 
         # Pre-compute embeddings
         embeddings: dict[int, np.ndarray] = {}

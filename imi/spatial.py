@@ -7,7 +7,6 @@ Analyzes topology: clusters, bridges, voids, anomalies.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
 
 import numpy as np
 
@@ -19,7 +18,7 @@ class TopologyReport:
     n_clusters: int = 0
     cluster_labels: list[int] = field(default_factory=list)
     cluster_sizes: dict[int, int] = field(default_factory=dict)
-    isolated_count: int = 0         # nodes not in any cluster
+    isolated_count: int = 0  # nodes not in any cluster
     density_scores: list[float] = field(default_factory=list)
     bridges: list[tuple[str, str]] = field(default_factory=list)  # node ids
 
@@ -60,6 +59,7 @@ class SpatialIndex:
         if len(embeddings) < 4:
             # Too few points for UMAP — use PCA fallback
             from sklearn.decomposition import PCA
+
             n_comp = min(n_components, len(embeddings), embeddings.shape[1])
             pca = PCA(n_components=n_comp)
             self.positions = pca.fit_transform(embeddings)
@@ -77,6 +77,7 @@ class SpatialIndex:
             self.positions = reducer.fit_transform(embeddings)
         except ImportError:
             from sklearn.decomposition import PCA
+
             pca = PCA(n_components=n_components)
             self.positions = pca.fit_transform(embeddings)
 
@@ -93,6 +94,7 @@ class SpatialIndex:
 
         try:
             from sklearn.cluster import HDBSCAN
+
             clusterer = HDBSCAN(
                 min_cluster_size=min_cluster_size,
                 min_samples=1,
@@ -100,6 +102,7 @@ class SpatialIndex:
             self.labels = clusterer.fit_predict(self.positions)
         except ImportError:
             from sklearn.cluster import KMeans
+
             k = min(3, len(self.positions))
             km = KMeans(n_clusters=k, n_init="auto", random_state=42)
             self.labels = km.fit_predict(self.positions)

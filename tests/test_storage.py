@@ -160,9 +160,7 @@ class TestJSONBackend:
         backend.put_nodes("episodic", nodes)
         backend.put_nodes("semantic", [make_node(10, id="sem_001")])
         backend.put_anchors({"node_001": [{"type": "fact", "reference": "test"}]})
-        backend.put_temporal(
-            {"test_0000": TemporalContext(timestamp=time.time(), session_id="s1")}
-        )
+        backend.put_temporal({"test_0000": TemporalContext(timestamp=time.time(), session_id="s1")})
 
         data = backend.export_all()
 
@@ -356,9 +354,7 @@ class TestSQLiteBackend:
         backend.put_nodes("episodic", nodes)
         backend.put_nodes("semantic", [make_node(10, id="sem_001")])
         backend.put_anchors({"node_001": [{"type": "fact", "reference": "test"}]})
-        backend.put_temporal(
-            {"test_0000": TemporalContext(timestamp=time.time(), session_id="s1")}
-        )
+        backend.put_temporal({"test_0000": TemporalContext(timestamp=time.time(), session_id="s1")})
         data = backend.export_all()
 
         backend2 = SQLiteBackend(tmp_path / "imi_test2.db")
@@ -413,14 +409,16 @@ class TestIMISpacePersistence:
         db_path = tmp_path / "space.db"
         space = IMISpace.from_sqlite(db_path, embedder=DummyEmbedder(), llm=DummyLLM())
         space.graph.add_edge("a", "b", EdgeType.CAUSAL, weight=0.7, label="test")
-        space.reconsolidation_log.append(ReconsolidationEvent(
-            node_id="a",
-            timestamp=123.0,
-            context="ctx",
-            changes=["changed"],
-            previous_orbital="old",
-            new_orbital="new",
-        ))
+        space.reconsolidation_log.append(
+            ReconsolidationEvent(
+                node_id="a",
+                timestamp=123.0,
+                context="ctx",
+                changes=["changed"],
+                previous_orbital="old",
+                new_orbital="new",
+            )
+        )
         space.annealing.iteration = 3
         space.annealing.energy_history = [1.0, 0.8, 0.7]
         space.annealing.converged = True

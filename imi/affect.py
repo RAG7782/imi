@@ -25,9 +25,9 @@ from imi.llm import LLMAdapter
 class AffectiveTag:
     """Emotional/importance signature of a memory."""
 
-    salience: float = 0.5    # 0.0 (routine) to 1.0 (critical)
-    valence: float = 0.0     # -1.0 (very negative) to +1.0 (very positive)
-    arousal: float = 0.5     # 0.0 (calm/background) to 1.0 (urgent/activating)
+    salience: float = 0.5  # 0.0 (routine) to 1.0 (critical)
+    valence: float = 0.0  # -1.0 (very negative) to +1.0 (very positive)
+    arousal: float = 0.5  # 0.0 (calm/background) to 1.0 (urgent/activating)
     _base_salience: float = -1.0  # initial salience before dynamic updates (-1 = not set)
 
     @property
@@ -44,7 +44,7 @@ class AffectiveTag:
 
         High-affect memories (positive or negative) resist fade.
         """
-        emotional_intensity = sqrt(self.valence ** 2 + self.arousal ** 2) / sqrt(2)
+        emotional_intensity = sqrt(self.valence**2 + self.arousal**2) / sqrt(2)
         return self.salience * (0.3 + 0.7 * emotional_intensity)
 
     @property

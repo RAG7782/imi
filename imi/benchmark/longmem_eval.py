@@ -29,10 +29,11 @@ from .ambench import generate_incidents, recall_at_k
 @dataclass
 class LongMemEvalResults:
     """Results from LongMemEval benchmark."""
-    recent_r5: float = 0.0      # Recall@5 for last 30 days
-    mid_r5: float = 0.0         # Recall@5 for 30-90 days
-    old_r5: float = 0.0         # Recall@5 for 90-180 days
-    overall_r5: float = 0.0     # Weighted average
+
+    recent_r5: float = 0.0  # Recall@5 for last 30 days
+    mid_r5: float = 0.0  # Recall@5 for 30-90 days
+    old_r5: float = 0.0  # Recall@5 for 90-180 days
+    overall_r5: float = 0.0  # Weighted average
     n_incidents: int = 0
     n_queries: int = 0
     n_days: int = 0
@@ -130,17 +131,9 @@ class LongMemEval:
         mid_cutoff = max_day - 90
         old_cutoff = max_day - 180
 
-        recent_incidents = [
-            inc for inc in self.incidents if inc["day"] >= recent_cutoff
-        ]
-        mid_incidents = [
-            inc for inc in self.incidents
-            if mid_cutoff <= inc["day"] < recent_cutoff
-        ]
-        old_incidents = [
-            inc for inc in self.incidents
-            if old_cutoff <= inc["day"] < mid_cutoff
-        ]
+        recent_incidents = [inc for inc in self.incidents if inc["day"] >= recent_cutoff]
+        mid_incidents = [inc for inc in self.incidents if mid_cutoff <= inc["day"] < recent_cutoff]
+        old_incidents = [inc for inc in self.incidents if old_cutoff <= inc["day"] < mid_cutoff]
 
         def eval_bucket(bucket: list[dict], n_queries: int) -> float:
             """Evaluate recall on a sample from a time bucket."""
@@ -152,9 +145,7 @@ class LongMemEval:
             for idx in indices:
                 inc = bucket[idx]
                 query_emb = self.embedder.embed(inc["text"])
-                results = store.search(
-                    query_emb, top_k=10, relevance_weight=relevance_weight
-                )
+                results = store.search(query_emb, top_k=10, relevance_weight=relevance_weight)
                 patterns = [n.tags[0] if n.tags else "" for n, _ in results]
                 hits += recall_at_k(patterns, inc["pattern_type"], k=5)
             return hits / n_sample

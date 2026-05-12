@@ -111,10 +111,12 @@ class OllamaEmbedder:
 
     def _request_embed(self, input_data: str | list[str]) -> list[list[float]]:
         """Call Ollama /api/embed endpoint."""
-        payload = json.dumps({
-            "model": self.model_name,
-            "input": input_data,
-        }).encode()
+        payload = json.dumps(
+            {
+                "model": self.model_name,
+                "input": input_data,
+            }
+        ).encode()
 
         req = urllib.request.Request(
             f"{self.base_url}/api/embed",
@@ -137,9 +139,7 @@ class OllamaEmbedder:
     def _truncate(self, text: str) -> str:
         """Truncate to max_chars to avoid Ollama errors on long input."""
         if len(text) > self.max_chars:
-            logger.debug(
-                "OllamaEmbedder: truncating %d chars to %d", len(text), self.max_chars
-            )
+            logger.debug("OllamaEmbedder: truncating %d chars to %d", len(text), self.max_chars)
             return text[: self.max_chars]
         return text
 

@@ -1,8 +1,8 @@
 """Tests for remaining benchmarks: SDRetrieval, LongMemEval, FederatedRecall."""
-import pytest
-from imi.benchmark.sd_retrieval import SDRetrieval
-from imi.benchmark.longmem_eval import LongMemEval
+
 from imi.benchmark.federated_recall import FederatedRecall
+from imi.benchmark.longmem_eval import LongMemEval
+from imi.benchmark.sd_retrieval import SDRetrieval
 
 
 class TestSDRetrieval:

@@ -9,25 +9,23 @@ This validates that the 4 sinergias work end-to-end, not just in isolation.
 """
 
 import json
-import os
 import time
 import uuid
-from pathlib import Path
 
-import pytest
 import numpy as np
+import pytest
 
-from imi.tiering import L0Identity, generate_l1
+from imi.affordance import Affordance
+from imi.node import AffectiveTag, MemoryNode
 from imi.symbiont_bridge import (
-    read_channel_weights,
     check_priority_shift,
     get_mound_approved_artifacts,
+    read_channel_weights,
 )
-from imi.node import MemoryNode, AffectiveTag
-from imi.affordance import Affordance
-
+from imi.tiering import generate_l1
 
 # ── Fixtures ──────────────────────────────────────────
+
 
 @pytest.fixture
 def fcm_dir(tmp_path):
@@ -78,6 +76,7 @@ def _make_nodes(n=10):
 
 # ── Sinergia 1: Channel Weights → L1 Promotion ──────
 
+
 class TestSinergia1ChannelWeights:
     """SYMBIONT Topology Engine → channel_weights.json → IMI L1 promotion."""
 
@@ -95,7 +94,6 @@ class TestSinergia1ChannelWeights:
 
         # IMI SIDE: Use weights in L1 generation
         nodes = _make_nodes(10)
-        l1_without = generate_l1(nodes, max_facts=5)
         l1_with = generate_l1(nodes, max_facts=5, channel_weights=weights)
 
         # Channel_0 has highest weight (0.9) → nodes tagged channel_0 should be boosted
@@ -123,6 +121,7 @@ class TestSinergia1ChannelWeights:
 
 # ── Sinergia 2: Mound APPROVED → L2 Cache ───────────
 
+
 class TestSinergia2MoundApproved:
     """SYMBIONT Mound artifact APPROVED → FCM event → IMI L2 cache."""
 
@@ -135,7 +134,11 @@ class TestSinergia2MoundApproved:
             "source": "symbiont",
             "type": "memory_created",
             "title": "Architecture decision: use VIEW pattern for L0-L3",
-            "content": "The L0-L3 stack should be implemented as a VIEW over the existing CLS architecture, not a replacement. This preserves the Nader reconsolidation model.",
+            "content": (
+                "The L0-L3 stack should be implemented as a VIEW over the existing "
+                "CLS architecture, not a replacement. This preserves the Nader "
+                "reconsolidation model."
+            ),
             "tags": ["mound_approved", "architecture"],
             "salience": 0.9,
             "memoryType": "decision",
@@ -149,9 +152,7 @@ class TestSinergia2MoundApproved:
         event_path.write_text(json.dumps(event))
 
         # IMI SIDE: Read approved artifacts from FCM
-        monkeypatch.setattr(
-            "imi.symbiont_bridge.FCM_EVENTS_DIR", fcm_dir
-        )
+        monkeypatch.setattr("imi.symbiont_bridge.FCM_EVENTS_DIR", fcm_dir)
         artifacts = get_mound_approved_artifacts()
 
         assert len(artifacts) == 1
@@ -209,6 +210,7 @@ class TestSinergia2MoundApproved:
 
 # ── Sinergia 3: PRIORITY_SHIFT → L1 Refresh ─────────
 
+
 class TestSinergia3PriorityShift:
     """SYMBIONT Murmuration PRIORITY_SHIFT → FCM → IMI L1 refresh."""
 
@@ -254,7 +256,6 @@ class TestSinergia3PriorityShift:
             node.access_count = 3
             nodes.append(node)
 
-        l1_general = generate_l1(nodes, max_facts=5)
         l1_filtered = generate_l1(nodes, max_facts=5, domain_filter=new_domain)
 
         # Filtered L1 should prioritize tributario-tagged nodes
@@ -295,6 +296,7 @@ class TestSinergia3PriorityShift:
 
 # ── Sinergia 4: Federation → FCM Convergence ────────
 
+
 class TestSinergia4FederationConvergence:
     """SYMBIONT Federation events flow through FCM bus format."""
 
@@ -320,7 +322,16 @@ class TestSinergia4FederationConvergence:
 
         # Validate FCM schema fields
         loaded = json.loads(event_path.read_text())
-        required_fields = ["id", "timestamp", "source", "type", "title", "content", "tags", "salience"]
+        required_fields = [
+            "id",
+            "timestamp",
+            "source",
+            "type",
+            "title",
+            "content",
+            "tags",
+            "salience",
+        ]
         for field in required_fields:
             assert field in loaded, f"Missing FCM field: {field}"
         assert loaded["source"] == "symbiont"
@@ -356,6 +367,7 @@ class TestSinergia4FederationConvergence:
 
 
 # ── Full Pipeline Integration ────────────────────────
+
 
 class TestFullPipeline:
     """Test the complete pipeline: multiple signals simultaneously."""
