@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
+import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from typing import Protocol
@@ -102,6 +104,8 @@ class OllamaEmbedder:
     base_url: str = ""
     _dims: int = field(default=0, repr=False)
     max_chars: int = 400
+    max_retries: int = 3        # playbook: exponential backoff 2s/4s/8s
+    backoff_base: float = 2.0
 
     def __post_init__(self):
         if not self.base_url:
@@ -110,31 +114,53 @@ class OllamaEmbedder:
         self.base_url = self.base_url.rstrip("/").removesuffix("/v1")
 
     def _request_embed(self, input_data: str | list[str]) -> list[list[float]]:
-        """Call Ollama /api/embed endpoint."""
-        payload = json.dumps(
-            {
-                "model": self.model_name,
-                "input": input_data,
-            }
-        ).encode()
+        """Call Ollama /api/embed with retry on transient transport failures.
 
-        req = urllib.request.Request(
-            f"{self.base_url}/api/embed",
-            data=payload,
-            headers={"Content-Type": "application/json"},
-            method="POST",
+        WHY: a long-running MCP process that hits Ollama during a memory-pressure
+        window (CLAUDE.md known issue) would otherwise cache a dead connection and
+        keep raising "no embeddings" forever, even after Ollama recovers. Bug found
+        2026-05-31: im_sact failed for a whole session while curl/fresh-process worked.
+        Connection: close prevents reusing a stale keep-alive socket between calls.
+        """
+        payload = json.dumps({"model": self.model_name, "input": input_data}).encode()
+        last_err: Exception | None = None
+
+        for attempt in range(self.max_retries):
+            try:
+                req = urllib.request.Request(
+                    f"{self.base_url}/api/embed",
+                    data=payload,
+                    headers={"Content-Type": "application/json", "Connection": "close"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    data = json.loads(resp.read())
+                embeddings = data.get("embeddings", [])
+                if not embeddings:
+                    # Empty but well-formed: a real model/input problem, not transport.
+                    raise RuntimeError(
+                        f"Ollama returned no embeddings for model {self.model_name!r}; "
+                        f"response keys={list(data.keys())}, "
+                        f"input_type={type(input_data).__name__}"
+                    )
+                if self._dims == 0:
+                    self._dims = len(embeddings[0])
+                return embeddings
+            except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
+                last_err = exc
+                if attempt < self.max_retries - 1:
+                    wait = self.backoff_base ** (attempt + 1)  # 2s, 4s, 8s
+                    logger.warning(
+                        "OllamaEmbedder transient failure (attempt %d/%d): %s — "
+                        "retrying in %.0fs",
+                        attempt + 1, self.max_retries, exc, wait,
+                    )
+                    time.sleep(wait)
+
+        raise RuntimeError(
+            f"Ollama embed failed after {self.max_retries} attempts at "
+            f"{self.base_url}/api/embed for model {self.model_name!r}: {last_err!r}"
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read())
-
-        embeddings = data.get("embeddings", [])
-        if not embeddings:
-            raise RuntimeError(f"Ollama returned no embeddings for model {self.model_name}")
-
-        if self._dims == 0:
-            self._dims = len(embeddings[0])
-
-        return embeddings
 
     def _truncate(self, text: str) -> str:
         """Truncate to max_chars to avoid Ollama errors on long input."""
