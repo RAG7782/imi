@@ -396,6 +396,60 @@ def _affordance_max_confidence(node) -> float:
         return 0.5
 
 
+# Sentinela: o termo de busca que NÃO sobrevive no índice semântico é
+# justamente o lexical-crítico (SHA, porta, versão, código de erro). Quando
+# o embedder Ollama falha (failure mode recorrente — socket morto do MCP de
+# longa duração), a busca semântica fica inerte. A camada lexical via FTS5
+# NÃO usa embedding, então é o fallback natural. Proveniência: diagnóstico
+# DCI/GrepSeek 2026-06-03, handoff 2026-06-03-dci-grepseek-memory-grep.md.
+def _lexical_search(space, query: str, top_k: int) -> list[dict]:
+    """DCI nativo: recupera nós por full-text (FTS5) sem tocar no embedder.
+
+    Espelha a camada de verificação de precisão do paradigma DCI: im_nav
+    semântico descobre a âncora; este caminho confirma a restrição lexical
+    exata. Retorna no mesmo shape dos hits semânticos para reuso a jusante.
+
+    >>> _lexical_search(space, "527ff55", 5)  # acha SHA que o vetor borra
+    """
+    backend = getattr(space, "backend", None)
+    if backend is None or not hasattr(backend, "search_fts"):
+        # Sem backend SQLite/FTS não há como degradar — explicitar o porquê.
+        raise RuntimeError(
+            "lexical mode requer SQLiteBackend com FTS5; "
+            f"backend ativo: {type(backend).__name__ if backend else None}"
+        )
+
+    # FTS5 trata alguns chars como sintaxe (-, :, .). Para um termo único e
+    # cru, envolver em aspas força match literal (frase). Multi-termo passa direto.
+    fts_query = query if " " in query.strip() else f'"{query.strip()}"'
+    try:
+        raw = backend.search_fts(fts_query, limit=top_k * 3)
+    except Exception as e:  # noqa: BLE001 — valor ofensor logado, não engolido
+        sys.stderr.write(f"[im_nav:lexical] search_fts falhou para {fts_query!r}: {e}\n")
+        return []
+
+    memories = []
+    for node_id, rank in raw[:top_k]:
+        node = space.backend.get_node("episodic", node_id) or space.backend.get_node(
+            "semantic", node_id
+        )
+        if node is None:
+            continue
+        d = node.to_dict()
+        content = d.get("summary_medium") or d.get("seed") or d.get("summary_orbital") or ""
+        memories.append(
+            {
+                "score": round(float(-rank), 3),  # FTS5 rank: menor = melhor → inverter
+                "content": content,
+                "id": node_id,
+                "tags": d.get("tags", []),
+                "affordances": [a.get("action", str(a)) if isinstance(a, dict) else str(a)
+                                for a in (d.get("affordances") or [])][:2],
+            }
+        )
+    return memories
+
+
 @mcp.tool()
 def im_nav(
     query: str,
@@ -413,19 +467,63 @@ def im_nav(
                        Phase 1: filtra candidatos com score semântico >= MIN_SCORE
                        Phase 2: rerank por MW × affordance_max_confidence
                        Ref: MemRL (arXiv:2601.03192) + MemoryWorth (arXiv:2604.12007)
+    mode="lexical"   — DCI nativo: full-text (FTS5) sem embedder. Recupera tokens
+                       que o vetor borra (SHA, porta, versão, código de erro, path).
+                       Ref: DCI/GrepSeek 2026-06-03. Também é fallback automático
+                       quando o embedder Ollama falha em semantic/utility.
     """
     t0 = _time_module.monotonic()
     space = _get_space()
     rw = None if relevance_weight < 0 else relevance_weight
 
-    nav = space.navigate(
-        query,
-        zoom=zoom,
-        top_k=top_k if mode == "semantic" else top_k * 3,
-        context=context,
-        relevance_weight=rw,
-        positional_optimize=positional_optimize,
-    )
+    # Caminho lexical explícito: bypassa navigate()/embedder por completo.
+    if mode == "lexical":
+        memories = _lexical_search(space, query, top_k)
+        elapsed_ms = (_time_module.monotonic() - t0) * 1000
+        _record_latency(elapsed_ms)
+        _log(f"im_nav '{query[:40]}' — {elapsed_ms:.1f}ms | hits={len(memories)} mode=lexical")
+        return json.dumps(
+            {
+                "query": query,
+                "retrieval_mode": "lexical",
+                "hits": len(memories),
+                "memories": memories,
+                "_perf_ms": round(elapsed_ms, 1),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+
+    try:
+        nav = space.navigate(
+            query,
+            zoom=zoom,
+            top_k=top_k if mode == "semantic" else top_k * 3,
+            context=context,
+            relevance_weight=rw,
+            positional_optimize=positional_optimize,
+        )
+    except RuntimeError as e:
+        # Fallback DCI: embedder caiu ("no embeddings") → degradar para lexical
+        # em vez de devolver erro inerte. Visível ao agente via degraded_to flag.
+        if "embedding" not in str(e).lower():
+            raise
+        memories = _lexical_search(space, query, top_k)
+        elapsed_ms = (_time_module.monotonic() - t0) * 1000
+        _log(f"im_nav '{query[:40]}' — embedder falhou, fallback lexical | hits={len(memories)}")
+        return json.dumps(
+            {
+                "query": query,
+                "retrieval_mode": "lexical",
+                "degraded_from": mode,
+                "degraded_reason": "embedder unavailable — DCI lexical fallback",
+                "hits": len(memories),
+                "memories": memories,
+                "_perf_ms": round(elapsed_ms, 1),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
 
     rw_used, intent_obj = space.adaptive_rw.classify_with_info(query)
 
