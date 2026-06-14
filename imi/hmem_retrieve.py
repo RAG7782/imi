@@ -62,9 +62,11 @@ HMEM_RETRIEVAL_ENABLED: bool = os.getenv("IMI_HMEM_RETRIEVAL", "0") == "1"
 # than the final k, so the correct branch is not pruned before the descent.
 _K_TOPO_MULTIPLIER: int = int(os.getenv("IMI_HMEM_K_TOPO_MULT", "3"))
 
-# Episode layer = real content (layer 3). Domain = most abstract (layer 0).
+# Layer scheme (spec §3.1): 0=Domain (most abstract) … 3=Episode (real content).
+# The descent seeds from ROOT index nodes (any layer<EPISODE not pointed-at),
+# NOT from a fixed layer, so a bottom-up partial tree works — see seed logic below.
 _EPISODE_LAYER = 3
-_DOMAIN_LAYER = 0
+_DOMAIN_LAYER = 0  # documents the scheme; descent no longer hardcodes it
 
 
 @dataclass
@@ -158,20 +160,28 @@ def recursive_retrieve(
         for c in n.child_ptrs:
             pointed_at.add(c)
 
-    domain_nodes: list["MemoryNode"] = []
+    # ROOT index nodes = the descent entry points. An index node is a ROOT when
+    # no higher index points at it (parent_id absent / not itself a child). We seed
+    # from roots, NOT from a hardcoded layer 0 — the consolidation builds the tree
+    # BOTTOM-UP (Trace layer first), so the highest populated layer today is L2,
+    # not L0. Seeding at roots makes the descent work for a partial tree (only
+    # Trace exists) AND a full tree (Domain at top) identically.
+    # [Fix 2026-06-14: real-store dry-run hit tree_nodes_visited=0 because the
+    #  descent only started at _DOMAIN_LAYER and consolidation produces L2 nodes.]
+    root_index_nodes: list["MemoryNode"] = []
     orphan_nodes: list["MemoryNode"] = []
     for n in index.values():
         is_index_node = n.layer < _EPISODE_LAYER and n.child_ptrs
-        if n.layer == _DOMAIN_LAYER and n.child_ptrs:
-            domain_nodes.append(n)
+        if is_index_node and n.id not in pointed_at:
+            root_index_nodes.append(n)  # a top-of-tree index node
         # Orphan = a leaf episode that no parent claims and that has no children.
         if not is_index_node and n.id not in pointed_at:
             orphan_nodes.append(n)
     result.orphan_pool_size = len(orphan_nodes)
 
-    # ----- Tree descent (§3.3): L0 → ... → L3 -----
+    # ----- Tree descent (§3.3): root index → ... → Episode -----
     visited: set[str] = set()  # CHECK-2 cycle guard — never trust tree acyclicity
-    survivors: list["MemoryNode"] = _topk_by_sim(query_embedding, domain_nodes, k_topo)
+    survivors: list["MemoryNode"] = _topk_by_sim(query_embedding, root_index_nodes, k_topo)
     for s in survivors:
         visited.add(s.id)
 
