@@ -142,6 +142,30 @@ def main() -> int:
         flat = _flat_search(space, q_emb, args.top_k)
         shadow_compare(query, q_emb, flat, [space.episodic, space.semantic], k_final=args.top_k)
 
+    # --- 5b. INDEPENDENT quality gate (non-circular) ---
+    # The shadow gate measures agreement with FLAT — but flat is what motivated the
+    # change, so "agree with flat" ≠ "be correct" (circular). This gate measures the
+    # hierarchical retrieval against the canary anchors' KNOWN expected_id targets —
+    # an oracle independent of flat. recall@k = target appears in top-k; p@1 = target
+    # is top-1. This is the honest "is it actually correct?" signal.
+    from imi.hmem_retrieve import recursive_retrieve
+
+    recall_hits = 0
+    p1_hits = 0
+    for a in anchors:
+        q_emb = space.embedder.embed(a.note or a.token)
+        res = recursive_retrieve(q_emb, [space.episodic, space.semantic], k_final=args.top_k)
+        got = [h.node.id[:12] for h in res.hits]
+        if a.expected_id in got:
+            recall_hits += 1
+        if got and got[0] == a.expected_id:
+            p1_hits += 1
+    recall_at_k = recall_hits / len(anchors)
+    p_at_1 = p1_hits / len(anchors)
+    quality_ok = recall_at_k >= 0.90  # independent bar: 90% of known targets retrieved
+    print(f"[5b/6] independent quality (vs known anchor targets, NOT vs flat): "
+          f"recall@{args.top_k}={recall_at_k:.0%} p@1={p_at_1:.0%} → quality_ok={quality_ok}")
+
     # --- 6. gate verdict ---
     s = summarize(since_days=None)
     print("[6/6] GATE VERDICT (spec §4.5 step 7):")
@@ -150,8 +174,11 @@ def main() -> int:
     print(f"      hier p50={s.get('hier_ms_p50')}ms p95={s.get('hier_ms_p95')}ms | "
           f"tree_populated_rows={s.get('rows_with_populated_tree')}/{s.get('n')}")
     print(f"      gate_meaningful={s.get('gate_meaningful')} | summarize.promote_ok={s.get('promote_ok')}")
-    print(f"      canary_held={canary_held}")
-    final = bool(s.get("promote_ok")) and canary_held
+    print(f"      canary_held={canary_held} | quality_ok={quality_ok} "
+          f"(recall@{args.top_k}={recall_at_k:.0%})")
+    # Promotion needs BOTH: low divergence-vs-flat (no regression) AND high absolute
+    # recall (actually correct). The independent gate breaks the circularity.
+    final = bool(s.get("promote_ok")) and canary_held and quality_ok
     print(f"\n  >>> PROMOTE_OK (this snapshot) = {final}")
     print("      NB: this is ONE snapshot. Spec requires the criterion to hold for 2 weeks")
     print("      before flipping mode=hierarchical to default. This script never flips it.")
