@@ -6,6 +6,7 @@ próximo agente/humano entenda o PORQUÊ, não só o O QUÊ. Formato leve (Micha
 | # | Título | Status | Data |
 |---|--------|--------|------|
 | [0001](0001-hmem-index-as-hit-and-parity-gate.md) | H-MEM: índice como hit + gate de paridade-com-flat | Aceito | 2026-06-14 |
+| [0002](0002-hmem-rollout-runbook.md) | H-MEM rollout PROMOTE+SHADOW (2 semanas) + decisão de flip | Ativo | 2026-06-14 |
 
 ## Backlog de decisões / trabalho futuro
 

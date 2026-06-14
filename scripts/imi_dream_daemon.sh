@@ -45,6 +45,14 @@ if [[ -z "${IMI_LLM_BACKEND:-}" ]] || [[ "${IMI_LLM_BACKEND}" == "api" ]]; then
     export IMI_LLM_BACKEND=ollama
 fi
 
+# ── H-MEM tree promotion (rollout 2026-06-14, spec §4.5 step 7) ────────────────
+# Liga a promoção da árvore H-MEM na consolidação: clusters consolidados viram
+# nós-índice (layer<3 + child_ptrs), membros recebem parent_id. Grava no DB real.
+# É a parte MUTANTE do rollout — protegida por: snapshot diário (hmem_rollout_daily.sh),
+# acíclico por construção, dirty-sink provado. O rollout diário DESLIGA esta linha
+# automaticamente (sed exato) se o canário detectar drift. Rollback manual: comentar.
+export IMI_HMEM_PROMOTE=1
+
 # ── Lock guard (evita múltiplas instâncias simultâneas) ───────────────────────
 
 if [[ "${1:-}" != "--force" ]]; then
