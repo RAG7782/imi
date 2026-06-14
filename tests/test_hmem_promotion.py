@@ -115,3 +115,47 @@ def test_flag_off_means_no_mutation(monkeypatch):
     assert idx.layer == 3, "no promotion → pattern stays at default Episode layer"
     assert idx.child_ptrs == []
     assert all(m.parent_id is None for m in members)
+
+
+def test_promotion_survives_save_and_reload(tmp_path):
+    """Silent-write-loss regression: the promoted pattern node's layer/child_ptrs
+    AND members' parent_id must survive a real backend save → reload.
+
+    Found 2026-06-14 by the Passo 7 harness: the fresh-pattern branch wired the
+    tree in memory but never re-marked the pattern node dirty, so save()'s
+    dirty-only path persisted it at layer=3 (its add()-time value) and dropped the
+    promotion. A copy with index_nodes=20 reloaded with index_nodes=0. This test
+    is the net that makes that failure loud (it uses a REAL SQLite backend — an
+    in-memory VectorStore would never have caught it).
+    """
+    import numpy as np
+
+    from imi.affect import AffectiveTag
+    from imi.space import IMISpace
+
+    os.environ["IMI_HMEM_PROMOTE"] = "1"
+    db = tmp_path / "promote_persist.db"
+    space = IMISpace.from_sqlite(str(db))
+
+    # Two near-identical episodes so find_clusters groups them.
+    for nid in ("e1", "e2", "e3"):
+        n = MemoryNode(id=nid, seed=f"seed {nid}", summary_medium=f"sum {nid}")
+        n.embedding = np.array([1.0, 0.0], dtype=np.float32)
+        n.affect = AffectiveTag(salience=0.9)
+        space.episodic.add(n)
+
+    from imi.maintain import find_clusters
+
+    clusters = find_clusters(space.episodic, similarity_threshold=0.5)
+    consolidate(clusters, space.semantic, space.embedder, _FakeLLM(),
+                dirty_sink=space.mark_node_dirty)
+    space.save()
+
+    # Fresh reload from the same DB file — the real round-trip.
+    reloaded = IMISpace.from_sqlite(str(db))
+    idx = [n for n in reloaded.semantic.nodes if n.layer < 3 and n.child_ptrs]
+    reparented = [n for n in reloaded.episodic.nodes if n.parent_id]
+    assert idx, "promoted index node must survive reload (layer<3 + child_ptrs)"
+    assert reparented, "re-parented episodes must survive reload (parent_id set)"
+    # The index node's children must still resolve to the reparented episodes.
+    assert set(idx[0].child_ptrs) == {n.id for n in reparented}

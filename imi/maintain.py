@@ -371,6 +371,12 @@ def consolidate(
             if _hmem_promote_enabled():
                 _wire_tree(pattern_node, cluster)
                 if dirty_sink:
+                    # CRITICAL: the pattern node was already persisted by add() at
+                    # layer=3 (default). _wire_tree just changed it to layer=2 +
+                    # child_ptrs IN MEMORY — without re-marking it dirty, save()'s
+                    # dirty-only path drops the promotion (silent-write-loss, found
+                    # by the Passo 7 reload check 2026-06-14: index nodes 20→0).
+                    dirty_sink(pattern_node)
                     for m in cluster:  # parent_id mutated → must be marked dirty
                         dirty_sink(m)
             new_patterns.append(pattern)
