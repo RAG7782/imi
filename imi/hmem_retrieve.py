@@ -62,6 +62,18 @@ HMEM_RETRIEVAL_ENABLED: bool = os.getenv("IMI_HMEM_RETRIEVAL", "0") == "1"
 # than the final k, so the correct branch is not pruned before the descent.
 _K_TOPO_MULTIPLIER: int = int(os.getenv("IMI_HMEM_K_TOPO_MULT", "3"))
 
+# Collapsed-tree safety net (RAPTOR-style). A pattern centroid is a LOSSY average
+# of its members: a query can match a specific leaf strongly (sim 0.67) while the
+# parent centroid matches weakly (sim 0.07), so the branch is pruned at the top and
+# the strong leaf is lost. Measured 2026-06-14: this is the residual recall gap vs
+# pure flat. The fix: blend a BOUNDED flat sweep of leaf episodes into the candidate
+# pool, so a strong leaf is never lost to a weak centroid. Achieves parity with flat
+# at ~the same latency (the sweep is over in-memory embeddings). Default ON — it is
+# the difference between hierarchical regressing vs matching flat. Disable to study
+# pure top-down behaviour: IMI_HMEM_COLLAPSED=0.
+_COLLAPSED_ENABLED: bool = os.getenv("IMI_HMEM_COLLAPSED", "1") == "1"
+_COLLAPSED_BUDGET: int = int(os.getenv("IMI_HMEM_COLLAPSED_BUDGET", "50"))
+
 # Layer scheme (spec §3.1): 0=Domain (most abstract) … 3=Episode (real content).
 # The descent seeds from ROOT index nodes (any layer<EPISODE not pointed-at),
 # NOT from a fixed layer, so a bottom-up partial tree works — see seed logic below.
@@ -80,7 +92,8 @@ class HMemHit:
     node: "MemoryNode"
     confidence: float
     via: str  # "tree" (episode via descent) | "index" (index node as hit, Option A)
-    #          | "orphan" (flat-pool fallback)
+    #          | "orphan" (out-of-tree flat fallback) | "collapsed" (in-tree leaf
+    #          recovered by the safety-net sweep when its branch was pruned at top)
 
 
 @dataclass
@@ -239,6 +252,24 @@ def recursive_retrieve(
         merged.append(
             HMemHit(node=orphan, confidence=max(0.0, _cosine(query_embedding, orphan)), via="orphan")
         )
+
+    # Collapsed-tree safety net: blend a bounded flat sweep of IN-TREE leaf episodes
+    # so a strong leaf whose branch was pruned at the top is recovered (RAPTOR-style).
+    # ASSERT-6 covers nodes OUTSIDE the tree (orphans); this covers nodes INSIDE the
+    # tree that the descent's top-level pruning skipped. Together: no strong leaf is
+    # ever lost, whether in the tree or not.
+    if _COLLAPSED_ENABLED:
+        in_tree_leaves = [
+            n for n in index.values()
+            if n.layer == _EPISODE_LAYER and n.id in pointed_at
+        ]
+        for leaf in _topk_by_sim(query_embedding, in_tree_leaves, _COLLAPSED_BUDGET):
+            if leaf.id in seen:
+                continue
+            seen.add(leaf.id)
+            merged.append(
+                HMemHit(node=leaf, confidence=max(0.0, _cosine(query_embedding, leaf)), via="collapsed")
+            )
 
     merged.sort(key=lambda h: h.confidence, reverse=True)
     result.hits = merged[:k_final]

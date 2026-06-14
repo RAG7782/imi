@@ -144,6 +144,33 @@ def test_k_topo_wider_than_k_final(monkeypatch):
     assert any(h.node.id == "ep5" for h in res.hits)
 
 
+def test_collapsed_net_recovers_strong_leaf_under_weak_centroid():
+    """RAPTOR-style safety net: a strong leaf whose parent centroid matches the
+    query WEAKLY must still be retrieved (its branch is pruned at the top otherwise).
+
+    Mechanism found 2026-06-14 on the real store: target leaf sim=0.67 to query but
+    parent centroid sim=0.07 → parent ranked #51, branch pruned, leaf lost. The
+    collapsed-tree blend sweeps in-tree leaves directly so the leaf is recovered.
+    """
+    # A weak centroid pointing at a strong leaf. The centroid embedding is far from
+    # the query [1,0]; the leaf is exactly the query.
+    weak_idx = _node("weakidx", 0, [0.0, 1.0], child_ptrs=["strongleaf"])  # centroid ⊥ query
+    strong_leaf = _node("strongleaf", 3, [1.0, 0.0], parent_id="weakidx")
+    # Enough decoy index nodes (all matching the query better than weak_idx) to push
+    # weak_idx OUT of the k_topo beam (k_final=2 → k_topo=6), so its branch is pruned
+    # at the top and the strong leaf can ONLY come back via the collapsed net.
+    decoys = [_node(f"d{i}", 0, [0.5, 0.5], child_ptrs=[f"de{i}"]) for i in range(20)]
+    decoy_eps = [_node(f"de{i}", 3, [0.4, 0.5], parent_id=f"d{i}") for i in range(20)]
+    store = _FakeStore([weak_idx, strong_leaf] + decoys + decoy_eps)
+
+    q = np.array([1.0, 0.0], dtype=np.float32)  # matches strong_leaf, NOT weak_idx
+    res = recursive_retrieve(q, [store], k_final=2)
+    ids = [h.node.id for h in res.hits]
+    assert "strongleaf" in ids, "strong leaf under a weak centroid must be recovered"
+    hit = next(h for h in res.hits if h.node.id == "strongleaf")
+    assert hit.via == "collapsed", "should be recovered via the collapsed-tree net"
+
+
 def test_embedding_less_node_sorts_last_not_dropped():
     """A node with no embedding gets sim=-1.0 (sorts last) but is not a crash."""
     n_ok = _node("ok", 3, [1.0, 0.0])
