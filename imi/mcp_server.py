@@ -471,6 +471,11 @@ def im_nav(
                        que o vetor borra (SHA, porta, versão, código de erro, path).
                        Ref: DCI/GrepSeek 2026-06-03. Também é fallback automático
                        quando o embedder Ollama falha em semantic/utility.
+    mode="hierarchical" — H-MEM (arXiv:2507.22925 §3.3): retrieval recursivo top-down
+                       pela árvore layer/child_ptrs. Cada hit traz um `confidence`
+                       injetado no contexto (não só ranking). Enquanto a árvore não
+                       está populada (pré-consolidação), o pool flat de órfãos
+                       responde 100% — opt-in via IMI_HMEM_RETRIEVAL, nunca default.
     """
     t0 = _time_module.monotonic()
     space = _get_space()
@@ -488,6 +493,51 @@ def im_nav(
                 "retrieval_mode": "lexical",
                 "hits": len(memories),
                 "memories": memories,
+                "_perf_ms": round(elapsed_ms, 1),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+
+    # Caminho hierárquico explícito (H-MEM §3.3): desce a árvore layer/child_ptrs
+    # em vez de varrer o store flat. Opt-in via IMI_HMEM_RETRIEVAL=1; nunca default.
+    # Enquanto a árvore não está populada (pré-consolidação), o pool flat de órfãos
+    # (ASSERT-6) responde 100% — por design, não por falha. Retorna confidence por
+    # hit (ASSERT-5): o peso é INJETADO no contexto, não só usado no ranking.
+    if mode == "hierarchical":
+        from imi.hmem_retrieve import recursive_retrieve
+
+        query_emb = space.embedder.embed(query)
+        hres = recursive_retrieve(query_emb, [space.episodic, space.semantic], k_final=top_k)
+        memories = []
+        for h in hres.hits:
+            d = h.node.to_dict()
+            content = d.get("summary_medium") or d.get("seed") or d.get("summary_orbital") or ""
+            memories.append(
+                {
+                    "score": round(h.confidence, 3),
+                    "confidence": round(h.confidence, 3),  # ASSERT-5: surfaced to the LLM
+                    "via": h.via,  # "tree" | "orphan" — honesty about the path taken
+                    "content": content,
+                    "id": h.node.id,
+                    "tags": d.get("tags", []),
+                }
+            )
+        elapsed_ms = (_time_module.monotonic() - t0) * 1000
+        _record_latency(elapsed_ms)
+        _log(
+            f"im_nav '{query[:40]}' — {elapsed_ms:.1f}ms | hits={len(memories)} "
+            f"mode=hierarchical tree={hres.tree_nodes_visited} orphans={hres.orphan_pool_size}"
+        )
+        return json.dumps(
+            {
+                "query": query,
+                "retrieval_mode": "hierarchical",
+                "hits": len(memories),
+                "memories": memories,
+                "tree_nodes_visited": hres.tree_nodes_visited,
+                "orphan_pool_size": hres.orphan_pool_size,
+                "broken_ptrs": hres.broken_ptrs,
                 "_perf_ms": round(elapsed_ms, 1),
             },
             ensure_ascii=False,
@@ -564,6 +614,24 @@ def im_nav(
             node = space.episodic.get(m.get("id", "")) or space.semantic.get(m.get("id", ""))
             mem["mw_score"] = _mw_score_from_node(node) if node else 0.5
         memories.append(mem)
+
+    # Shadow-mode (H-MEM §4.5 step 4): run hierarchical BESIDE the served flat
+    # result and log divergence. Opt-in via IMI_HMEM_SHADOW=1; never changes what
+    # is served (`memories` above is returned untouched). Failure here never
+    # blocks the query — the divergence log is best-effort telemetry.
+    if os.getenv("IMI_HMEM_SHADOW", "0") == "1":
+        try:
+            from imi.hmem_shadow import shadow_compare
+
+            query_emb = space.embedder.embed(query)
+            flat_pairs = [
+                (n, m.get("score", 0.0))
+                for m in memories
+                if (n := space.episodic.get(m["id"]) or space.semantic.get(m["id"]))
+            ]
+            shadow_compare(query, query_emb, flat_pairs, [space.episodic, space.semantic], k_final=top_k)
+        except Exception as e:  # noqa: BLE001 — shadow telemetry must never break im_nav
+            _log(f"im_nav shadow-mode skipped: {type(e).__name__}: {e}")
 
     elapsed_ms = (_time_module.monotonic() - t0) * 1000
     _record_latency(elapsed_ms)
