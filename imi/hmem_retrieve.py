@@ -79,7 +79,8 @@ class HMemHit:
     """
     node: "MemoryNode"
     confidence: float
-    via: str  # "tree" (reached by recursive descent) | "orphan" (flat-pool fallback)
+    via: str  # "tree" (episode via descent) | "index" (index node as hit, Option A)
+    #          | "orphan" (flat-pool fallback)
 
 
 @dataclass
@@ -185,7 +186,14 @@ def recursive_retrieve(
     for s in survivors:
         visited.add(s.id)
 
-    episodes: list["MemoryNode"] = [s for s in survivors if s.layer == _EPISODE_LAYER]
+    # Option A (Renato, 2026-06-14): an index node is BOTH a router AND a valid hit.
+    # Measured on the real store: 28% of queries want a pattern/index node as their
+    # top-1 (patterns ARE distilled, queryable knowledge in IMI). So every node
+    # walked during the descent — episode OR index — becomes a candidate hit. The
+    # routing logic is unchanged (only layer<EPISODE nodes get expanded below); we
+    # just stop discarding the index nodes from the result set. This realigns
+    # hierarchical with flat, where those nodes already rank as hits.
+    candidates: list["MemoryNode"] = list(survivors)
 
     # Descend until survivors are all episodes (or the tree runs out).
     while survivors and any(s.layer < _EPISODE_LAYER for s in survivors):
@@ -207,18 +215,21 @@ def recursive_retrieve(
         # Beam narrows toward k_final as we approach the Episode layer.
         beam = max(k_final, k_topo // (result.layers_descended + 1))
         survivors = _topk_by_sim(query_embedding, next_children, beam)
-        episodes.extend(s for s in survivors if s.layer == _EPISODE_LAYER)
+        candidates.extend(survivors)  # episodes AND index nodes both qualify (Option A)
 
     result.tree_nodes_visited = len(visited)
 
-    # ----- Merge tree episodes + orphan pool, dedup, rank by confidence -----
+    # ----- Merge tree candidates + orphan pool, dedup, rank by confidence -----
     seen: set[str] = set()
     merged: list[HMemHit] = []
-    for ep in episodes:
-        if ep.id in seen:
+    for node in candidates:
+        if node.id in seen:
             continue
-        seen.add(ep.id)
-        merged.append(HMemHit(node=ep, confidence=max(0.0, _cosine(query_embedding, ep)), via="tree"))
+        seen.add(node.id)
+        # via="tree" for episodes reached by descent; "index" for an index node
+        # surfaced as a hit (Option A) — keeps the shadow log honest about path.
+        via = "index" if (node.layer < _EPISODE_LAYER and node.child_ptrs) else "tree"
+        merged.append(HMemHit(node=node, confidence=max(0.0, _cosine(query_embedding, node)), via=via))
 
     # Orphan pool: flat TopK, merged so no legacy node is ever lost (ASSERT-6).
     for orphan in _topk_by_sim(query_embedding, orphan_nodes, k_final):
