@@ -1,0 +1,198 @@
+{
+  "schema_version": "v3-baseline-2026-05-24",
+  "generated_at_utc": "2026-05-24T06:22:15.376083+00:00",
+  "purpose": "Fase 0 Passo 2 — baseline retroativo IMI v3 pre-Onda-1",
+  "authority": "ADR-004 (~/experimentos/.aiox/stories/ADR-004.adr.md)",
+  "plan_ref": "~/.claude/plans/gentle-riding-dusk.md",
+  "snapshot_ref": "/Users/renatoaparegomes/experimentos/tools/imi/imi_memory.db.eternal-snapshot-20260524",
+  "snapshot_sha256_file": "/Users/renatoaparegomes/experimentos/tools/imi/imi_memory.db.eternal-snapshot-20260524.sha256",
+  "sources": {
+    "imi_boot_log": {
+      "source_path": "/Users/renatoaparegomes/.claude/imi_boot.log",
+      "source_bytes": 5472292,
+      "source_modified_iso": "2026-05-24T06:21:30.455889+00:00",
+      "first_ts_in_log": "01:44:23",
+      "last_ts_in_log": "06:21:30",
+      "mcp_op_counts": {
+        "im_nav": 185,
+        "from_sqlite": 430,
+        "im_enc": 243,
+        "im_int": 45,
+        "im_int_list": 58,
+        "im_int_fulfill": 35,
+        "im_mw_update": 12,
+        "im_feedback": 3
+      },
+      "latency_im_nav": {
+        "n": 185,
+        "min_ms": 0.1,
+        "max_ms": 34208.1,
+        "mean_ms": 936.1,
+        "median_ms": 34.3,
+        "p50_ms": 34.3,
+        "p95_ms": 5529.1,
+        "p99_ms": 25714.7,
+        "stdev_ms": 3738.5
+      },
+      "latency_from_sqlite": {
+        "n": 430,
+        "min_ms": 4.5,
+        "max_ms": 254980.6,
+        "mean_ms": 4688.4,
+        "median_ms": 449.1,
+        "p50_ms": 450.0,
+        "p95_ms": 14937.8,
+        "p99_ms": 36634.7,
+        "stdev_ms": 16326.3
+      }
+    },
+    "crypto_audit_jsonl": {
+      "source_path": "/Users/renatoaparegomes/.imi/crypto_audit.jsonl",
+      "event_count": 360,
+      "first_event_ts": "2026-04-19T06:11:52.917655+00:00",
+      "last_event_ts": "2026-05-24T06:06:41.406464+00:00",
+      "pii_count_mean": 0.014,
+      "pii_count_max": 1,
+      "pii_count_total": 5,
+      "risk_score_mean": 0.0028,
+      "risk_score_max": 0.3,
+      "risk_score_over_0.5": 0,
+      "sanitizer_backends": {
+        "native": 360
+      },
+      "key_fingerprints_distinct": 2,
+      "key_fingerprints": {
+        "903813a9879d38e1": 1,
+        "d12a689a12f776b8": 359
+      }
+    },
+    "dream_events_jsonl": {
+      "source_path": "/Users/renatoaparegomes/.claude/imi_dream_events.jsonl",
+      "event_count": 178,
+      "first_event_ts": "2026-04-17T00:00:00Z",
+      "last_event_ts": "2026-05-24T00:01:41Z",
+      "rounds_distinct": 3,
+      "energy": {
+        "n": 138,
+        "mean": 75250.24,
+        "min": 59264.0,
+        "max": 91810.5,
+        "median": 75090.71,
+        "stdev": 8663.82
+      },
+      "patterns_total": 2002,
+      "patterns_mean_per_event": 11.25,
+      "episodic_initial": 0,
+      "episodic_final": 2885,
+      "episodic_delta": 2885,
+      "semantic_initial": 0,
+      "semantic_final": 297,
+      "semantic_delta": 297,
+      "convergence": "varies"
+    },
+    "imi_memory_db": {
+      "source_path": "/Users/renatoaparegomes/experimentos/tools/imi/imi_memory.db",
+      "db_size_bytes": 479404032,
+      "db_size_mb": 457.2,
+      "wal_size_bytes": 238992,
+      "wal_size_mb": 0.23,
+      "phys_rows_total": 22446,
+      "logical_nodes_total": 4057,
+      "active_nodes": 17685,
+      "tombstones": 4761,
+      "tombstone_pct": 21.2,
+      "versions_per_node_mean": 5.53,
+      "versions_per_node_max": 392,
+      "fts_rows": null,
+      "temporal_contexts_total": 1041,
+      "sessions_distinct": 1,
+      "session_1_bug_present": true,
+      "growth_weekly_iso": [
+        {
+          "week": "2026-W12",
+          "new_nodes": 21
+        },
+        {
+          "week": "2026-W13",
+          "new_nodes": 13
+        },
+        {
+          "week": "2026-W14",
+          "new_nodes": 323
+        },
+        {
+          "week": "2026-W15",
+          "new_nodes": 406
+        },
+        {
+          "week": "2026-W16",
+          "new_nodes": 198
+        },
+        {
+          "week": "2026-W17",
+          "new_nodes": 184
+        },
+        {
+          "week": "2026-W18",
+          "new_nodes": 789
+        },
+        {
+          "week": "2026-W19",
+          "new_nodes": 973
+        },
+        {
+          "week": "2026-W20",
+          "new_nodes": 1273
+        }
+      ]
+    }
+  },
+  "key_findings": {
+    "bug_A_from_sqlite_p99_high": {
+      "confirmed": true,
+      "p99_ms": 36634.7,
+      "max_ms": 254980.6,
+      "samples": 430,
+      "interpretation": "from_sqlite p99 supera 30s (plano docs 35s); max ultrapassa 250s = bug arquitetural",
+      "fix_candidate": "lazy loading + LRU em IMISpace.from_sqlite (~space.py)"
+    },
+    "bug_B_session_1_unique": {
+      "confirmed": true,
+      "total_temporal_contexts": 1041,
+      "distinct_sessions": 1,
+      "interpretation": "todos os contextos temporais caem em session_1 — temporal.py não rotaciona session_id",
+      "blocking": "Fase 1 (T1.2 — blueprint DA STATE-RECENT exige rotação)"
+    },
+    "im_sts_vs_db_count_discrepancy": {
+      "im_sts_total_in_memory": 3240,
+      "db_logical_nodes": 4057,
+      "delta": 817,
+      "interpretation": "im_sts retorna count in-memory; from_sqlite não carrega 100% dos nós — raiz comum com bug A"
+    },
+    "save_quadratic_ratio": {
+      "phys_rows": 22446,
+      "logical_nodes": 4057,
+      "versions_per_node_mean": 5.53,
+      "versions_per_node_max": 392,
+      "interpretation": "ratio físico/lógico ~5.5x confirma save() quadrático"
+    },
+    "tombstone_pressure": {
+      "tombstones": 4761,
+      "pct": 21.2,
+      "interpretation": "tombstones residentes ocupam ~20% das linhas físicas"
+    },
+    "sanitizer_pii_zero_high_risk": {
+      "events": 360,
+      "high_risk": 0,
+      "interpretation": "zero eventos com risk > 0.5 em 360 amostras = sanitizer está funcionando"
+    },
+    "dream_daemon_never_converges": {
+      "events": 178,
+      "energy_range": [
+        59264.0,
+        91810.5
+      ],
+      "interpretation": "energy oscila em faixa estreita ~60k — convergência não acontece, daemon roda contínuo"
+    }
+  }
+}

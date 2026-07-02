@@ -9,6 +9,17 @@ Implements CLS (Complementary Learning Systems):
 
 from __future__ import annotations
 
+# --- H-MEM tree promotion (spec §3.4) ---------------------------------------
+# A consolidated pattern node IS the H-MEM index node: it abstracts a cluster of
+# episodes, exactly the Trace layer (L2) of the paper. Promotion wires the tree:
+#   pattern_node.layer = TRACE; pattern_node.child_ptrs = [member ids]
+#   each member.parent_id = pattern_node.id
+# Acyclic BY CONSTRUCTION: the only edge direction is index(semantic) → member
+# (episodic). Members never get child_ptrs here, so no cycle can form (CHECK-2 is
+# the reader's backstop; this is the writer's guarantee).
+# Batch-only: this runs inside consolidate() (the dream cycle), never in the
+# im_enc hot path (R3). Default OFF until shadow data validates the tree (§4.5).
+import os as _os_promote
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -27,6 +38,37 @@ from imi.events import (
 from imi.llm import LLMAdapter
 from imi.node import MemoryNode
 from imi.store import VectorStore
+
+_HMEM_TRACE_LAYER = 2  # Trace = abstraction over a cluster of episodes
+_EPISODE_LAYER = 3
+
+
+def _hmem_promote_enabled() -> bool:
+    """Opt-in flag, read per-call so a long-running MCP picks it up on next dream.
+
+    Default OFF: promotion writes tree pointers into the real store, and the
+    pre-mortem forbids populating the tree before shadow-mode has data. Flip to
+    "1" only when ready to start growing the tree under shadow observation.
+    """
+    return _os_promote.getenv("IMI_HMEM_PROMOTE", "0") == "1"
+
+
+def _wire_tree(index_node: MemoryNode, members: list[MemoryNode]) -> None:
+    """Make `index_node` the H-MEM parent of `members` (spec §3.4, CHECK-1).
+
+    Sets index_node.layer/child_ptrs and each member.parent_id so the bidirectional
+    invariant holds (CHECK-1: a child's parent_id == the id of the node whose
+    child_ptrs contains it). Re-clustering a member into a new index node simply
+    overwrites its parent_id (last consolidation wins) — the stale parent's
+    child_ptr then dangles, which the reader tolerates as a broken ptr (CHECK-3).
+    """
+    index_node.layer = _HMEM_TRACE_LAYER
+    index_node.child_ptrs = [m.id for m in members]
+    for m in members:
+        m.parent_id = index_node.id
+        # Members stay at Episode layer — they are the concrete content (L3).
+        if m.layer < _EPISODE_LAYER:
+            m.layer = _EPISODE_LAYER
 
 
 @dataclass
@@ -167,6 +209,7 @@ def consolidate(
     semantic_store: VectorStore,
     embedder: Embedder,
     llm: LLMAdapter | None = None,
+    dirty_sink: Any = None,
 ) -> list[PatternNode]:
     """Convert episodic clusters into semantic patterns.
 
@@ -179,6 +222,12 @@ def consolidate(
       to prevent runaway phi4-mini usage.
     - Fallback: clusters below the threshold use the strongest node's summary
       (original behaviour).
+
+    dirty_sink: optional callable(node) invoked for every EPISODIC member whose
+    parent_id is mutated by H-MEM promotion. The caller (dream cycle) wires this
+    to space.mark_node_dirty so the new parent_id survives a backend save —
+    without it, _save_dirty_nodes() would silently drop the tree pointers (the
+    exact silent-write-loss the canary guards against). No-op when promotion is off.
     """
     import os as _os
 
@@ -252,6 +301,23 @@ def consolidate(
             existing_node = existing[0][0]
             existing_node.access_count += len(cluster)
             existing_node.tags = list(set(existing_node.tags + all_tags))
+            # H-MEM §3.4: extend the existing index node's child_ptrs with the new
+            # cluster members (union, no dupes) and re-parent them. The existing
+            # pattern absorbs this cluster, so it must own its children too.
+            if _hmem_promote_enabled():
+                merged_members = {c.id: c for c in cluster}
+                for cid in existing_node.child_ptrs:
+                    merged_members.setdefault(cid, None)  # keep prior ptrs as-is
+                existing_node.layer = _HMEM_TRACE_LAYER
+                existing_node.child_ptrs = list(merged_members.keys())
+                if dirty_sink:
+                    dirty_sink(existing_node)  # child_ptrs mutated on the index node
+                for c in cluster:
+                    c.parent_id = existing_node.id
+                    if c.layer < _EPISODE_LAYER:
+                        c.layer = _EPISODE_LAYER
+                    if dirty_sink:
+                        dirty_sink(c)  # parent_id mutated → mark dirty for save
             if semantic_store.backend:
                 semantic_store.backend.log_event(
                     MemoryEvent(
@@ -298,6 +364,19 @@ def consolidate(
                 affordances=total_affordances[:4],  # cap at 4
             )
             semantic_store.add(pattern_node)
+            # H-MEM §3.4: this fresh pattern node IS the Trace-layer index for its
+            # cluster. Wire the tree so recursive_retrieve() has something to descend.
+            if _hmem_promote_enabled():
+                _wire_tree(pattern_node, cluster)
+                if dirty_sink:
+                    # CRITICAL: the pattern node was already persisted by add() at
+                    # layer=3 (default). _wire_tree just changed it to layer=2 +
+                    # child_ptrs IN MEMORY — without re-marking it dirty, save()'s
+                    # dirty-only path drops the promotion (silent-write-loss, found
+                    # by the Passo 7 reload check 2026-06-14: index nodes 20→0).
+                    dirty_sink(pattern_node)
+                    for m in cluster:  # parent_id mutated → must be marked dirty
+                        dirty_sink(m)
             new_patterns.append(pattern)
 
     return new_patterns
@@ -310,6 +389,7 @@ def run_maintenance(
     llm: LLMAdapter | None = None,
     similarity_threshold: float = 0.45,
     budget: int = 100,
+    dirty_sink: Any = None,
 ) -> MaintenanceReport:
     """Execute one maintenance cycle (dreaming).
 
@@ -335,7 +415,7 @@ def run_maintenance(
 
     # 3. Consolidate clusters into semantic patterns
     if clusters:
-        patterns = consolidate(clusters, semantic, embedder, llm)
+        patterns = consolidate(clusters, semantic, embedder, llm, dirty_sink=dirty_sink)
         consolidated = len(patterns)
         if backend:
             for p in patterns:

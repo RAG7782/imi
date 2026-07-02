@@ -18,6 +18,8 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
+from imi.intent_index import ActiveIntentIndex, is_real_link
+
 # --- Server setup (no instructions = 0 tokens) ---
 
 mcp = FastMCP("imi", port=int(os.environ.get("IMI_PORT", "8080")))
@@ -32,6 +34,34 @@ _SPACE_TTL = float(os.environ.get("IMI_SPACE_TTL", "3600"))  # 1h default
 _LOG_FILE = Path.home() / ".claude" / "imi_boot.log"
 # H13 fix: RLock for thread-safe singleton access
 _space_lock = threading.RLock()
+
+# ST-IMI-INTENT-INDEX: índice O(1) de intenções ativas, pareado ao _space singleton
+# (mesmo lifecycle/lock). Reconstruído quando o space (re)carrega — ver _get_space.
+_intent_index: ActiveIntentIndex = ActiveIntentIndex()
+
+
+def _rebuild_intent_index(space) -> None:
+    """T2: repovoa o índice de intenções ativas a partir do store episódico.
+
+    Varre os nós de intenção pendentes uma vez (no (re)load do space, fora do caminho
+    quente de retrieval) e reconstrói o set ativo. Falha graciosa (SC-5): erro aqui
+    loga e deixa o índice como está — nunca derruba o _get_space.
+    """
+    try:
+        pending = []
+        for node in space.episodic.nodes:
+            if not node.summary_orbital.startswith("[INTENT:"):
+                continue
+            try:
+                data = json.loads(node.seed)
+            except Exception:
+                continue
+            if data.get("node_type") == "intention" and data.get("status") == "pending":
+                pending.append({"id": node.id})
+        _intent_index.rebuild(pending)
+        _log(f"intent_index rebuilt: {_intent_index.active_intent_count} active intention(s)")
+    except Exception as e:  # SC-5: degrada, não bloqueia
+        _log(f"intent_index rebuild WARN (degraded): {e}")
 
 
 def _log(msg: str) -> None:
@@ -75,6 +105,8 @@ def _get_space():
                 f"from_sqlite() #{_sqlite_load_count} — {elapsed:.1f}ms | "
                 f"episodic={len(_space.episodic.nodes)} semantic={len(_space.semantic.nodes)}"
             )
+            # T2: repovoa o índice de intenções ativas junto com o (re)load do space
+            _rebuild_intent_index(_space)
         return _space
 
 
@@ -138,14 +170,17 @@ def _check_intent_resolved_in_memory(
     return None
 
 
-def _find_related_intentions(space, tag_list: list[str], experience: str) -> list[dict]:
-    """IMI-E04 S06 + Camada A: Find pending intentions with tag or keyword overlap.
+def _find_related_intentions(
+    space, tag_list: list[str], experience: str, encoded_node_id: str = ""
+) -> list[dict]:
+    """IMI-E04 S06 + Camada A: Find pending intentions genuinely linked to this memory.
 
-    Matches by: (1) direct tag intersection, (2) keyword presence in intention content.
-    Camada A: antes de retornar como pendente, verifica se já existe evidência de
-    conclusão em memória episódica recente. Se sim, marca como possibly_resolved=True
-    para que o agente confirme com o usuário em vez de exibir como ativa.
-    Returns intentions sorted by overlap_score DESC, max 3.
+    T4 (ST-IMI-INTENT-INDEX / SC-4): o vínculo agora exige `is_real_link` (umbral RÍGIDO —
+    tag>=2 OU word>=3), não o `overlap_score>=1` frouxo de antes. Aquele umbral fazia a
+    `resolution_evidence` genérica (ex.: "Renato quer 3 consultas grátis JUDIT") colar em
+    intenções díspares (OpenCut, backup, FI-Engine...) — o bug do matcher. `resolution_evidence`
+    só é anexada quando o vínculo é real, e o vínculo real é registrado no _intent_index
+    (habilita o trilho F1 da BUDGET-01). Returns intentions sorted by overlap_score DESC, max 3.
     """
     exp_words = set(w.lower() for w in experience.split() if len(w) > 4)
     tag_set = set(t.lower() for t in (tag_list or []))
@@ -166,28 +201,32 @@ def _find_related_intentions(space, tag_list: list[str], experience: str) -> lis
         intent_tags = set(t.lower() for t in (data.get("tags") or []))
         intent_words = set(w.lower() for w in data.get("content", "").split() if len(w) > 4)
 
-        tag_overlap = len(tag_set & intent_tags)
-        word_overlap = len(exp_words & intent_words)
-        overlap_score = tag_overlap * 2 + word_overlap  # tags contam mais
+        # SC-4: vínculo REAL (rígido), não overlap frouxo. Corrige o bug do matcher.
+        if not is_real_link(intent_tags, intent_words, tag_set, exp_words):
+            continue
 
-        if overlap_score >= 1:
-            entry = {
-                "id": node.id,
-                "content": data.get("content", "")[:120],
-                "project": data.get("project", ""),
-                "deadline": data.get("deadline", ""),
-                "overlap_score": overlap_score,
-                "tag_matches": list(tag_set & intent_tags),
-            }
-            # Camada A — verificação de conclusão latente
-            evidence = _check_intent_resolved_in_memory(
-                space, node.id, data.get("content", ""), data.get("tags", [])
-            )
-            if evidence:
-                entry["possibly_resolved"] = True
-                entry["resolution_evidence"] = evidence["summary"]
-                entry["resolution_evidence_id"] = evidence["evidence_id"]
-            matches.append(entry)
+        # Vínculo real → registra no índice ativo (T3/F1) se temos o node_id do encode
+        if encoded_node_id:
+            _intent_index.link(node.id, encoded_node_id)
+
+        overlap_score = len(tag_set & intent_tags) * 2 + len(exp_words & intent_words)
+        entry = {
+            "id": node.id,
+            "content": data.get("content", "")[:120],
+            "project": data.get("project", ""),
+            "deadline": data.get("deadline", ""),
+            "overlap_score": overlap_score,
+            "tag_matches": list(tag_set & intent_tags),
+        }
+        # Camada A — verificação de conclusão latente (só para vínculos reais agora)
+        evidence = _check_intent_resolved_in_memory(
+            space, node.id, data.get("content", ""), data.get("tags", [])
+        )
+        if evidence:
+            entry["possibly_resolved"] = True
+            entry["resolution_evidence"] = evidence["summary"]
+            entry["resolution_evidence_id"] = evidence["evidence_id"]
+        matches.append(entry)
 
     matches.sort(key=lambda x: x["overlap_score"], reverse=True)
     return matches[:3]
@@ -269,8 +308,8 @@ def im_enc(
     if surprise and surprise > 0.0:
         node.surprise_magnitude = max(0.0, min(1.0, surprise))
 
-    # IMI-E04 S06: Check for pending intentions with tag/keyword overlap
-    related_intentions = _find_related_intentions(space, tag_list or [], experience)
+    # IMI-E04 S06: Check for pending intentions genuinely linked to this memory (T4)
+    related_intentions = _find_related_intentions(space, tag_list or [], experience, node.id)
 
     result = {
         "id": node.id,
@@ -311,6 +350,8 @@ def im_enc(
                         "[INTENT:", "[DONE:"
                     )
                     space.backend.put_node("episodic", intent_node)
+                    # T3: auto-fulfill também remove a intenção do índice ativo
+                    _intent_index.on_intent_fulfilled(resolves_intent)
                     result["intent_resolved"] = resolves_intent
                     _log(
                         f"im_enc Camada-B: intent {resolves_intent} auto-fulfilled by {node.id[:8]}"
@@ -396,6 +437,86 @@ def _affordance_max_confidence(node) -> float:
         return 0.5
 
 
+# Sentinela: o termo de busca que NÃO sobrevive no índice semântico é
+# justamente o lexical-crítico (SHA, porta, versão, código de erro). Quando
+# o embedder Ollama falha (failure mode recorrente — socket morto do MCP de
+# longa duração), a busca semântica fica inerte. A camada lexical via FTS5
+# NÃO usa embedding, então é o fallback natural. Proveniência: diagnóstico
+# DCI/GrepSeek 2026-06-03, handoff 2026-06-03-dci-grepseek-memory-grep.md.
+def _lexical_search(space, query: str, top_k: int) -> list[dict]:
+    """DCI nativo: recupera nós por full-text (FTS5) sem tocar no embedder.
+
+    Espelha a camada de verificação de precisão do paradigma DCI: im_nav
+    semântico descobre a âncora; este caminho confirma a restrição lexical
+    exata. Retorna no mesmo shape dos hits semânticos para reuso a jusante.
+
+    >>> _lexical_search(space, "527ff55", 5)  # acha SHA que o vetor borra
+    """
+    backend = getattr(space, "backend", None)
+    if backend is None or not hasattr(backend, "search_fts"):
+        # Sem backend SQLite/FTS não há como degradar — explicitar o porquê.
+        raise RuntimeError(
+            "lexical mode requer SQLiteBackend com FTS5; "
+            f"backend ativo: {type(backend).__name__ if backend else None}"
+        )
+
+    # FTS5 trata alguns chars como sintaxe (-, :, .). Para um termo único e
+    # cru, envolver em aspas força match literal (frase). Multi-termo passa direto.
+    fts_query = query if " " in query.strip() else f'"{query.strip()}"'
+    try:
+        raw = backend.search_fts(fts_query, limit=top_k * 3)
+    except Exception as e:  # noqa: BLE001 — valor ofensor logado, não engolido
+        sys.stderr.write(f"[im_nav:lexical] search_fts falhou para {fts_query!r}: {e}\n")
+        return []
+
+    memories = []
+    for node_id, rank in raw[:top_k]:
+        node = space.backend.get_node("episodic", node_id) or space.backend.get_node(
+            "semantic", node_id
+        )
+        if node is None:
+            continue
+        d = node.to_dict()
+        content = d.get("summary_medium") or d.get("seed") or d.get("summary_orbital") or ""
+        memories.append(
+            {
+                "score": round(float(-rank), 3),  # FTS5 rank: menor = melhor → inverter
+                "content": content,
+                "id": node_id,
+                "tags": d.get("tags", []),
+                "affordances": [a.get("action", str(a)) if isinstance(a, dict) else str(a)
+                                for a in (d.get("affordances") or [])][:2],
+            }
+        )
+    return memories
+
+
+def _inject_active_intent_rail(
+    space, raw_memories: list[dict], final_memories: list[dict]
+) -> list[dict]:
+    """ST-IMI-BUDGET-01 F1: re-injeta nós de intenção ativa cortados pelo top_k.
+
+    Um nó vinculado a intenção pendente ativa (via _intent_index, O(1)) NUNCA deve ser
+    silenciosamente descartado do retrieval — senão o protocolo de Camada A ("intenção
+    possivelmente concluída?") nunca dispara. Aqui: se algum candidato de `raw_memories`
+    é intenção-ativa mas ficou fora de `final_memories`, ele é anexado ao fim.
+
+    Falha graciosa (SC-5): índice vazio ou sem ativos → retorna `final_memories` intacto.
+    O(N) sobre raw_memories (já em memória), lookup O(1) por candidato.
+    """
+    if _intent_index.active_intent_count == 0:
+        return final_memories
+    already = {m.get("id", "") for m in final_memories}
+    rail = [
+        m for m in raw_memories
+        if m.get("id") and m["id"] not in already and _intent_index.is_node_active(m["id"])
+    ]
+    if not rail:
+        return final_memories
+    _log(f"im_nav intent-rail: re-injetados {len(rail)} nó(s) de intenção ativa (F1)")
+    return final_memories + rail
+
+
 @mcp.tool()
 def im_nav(
     query: str,
@@ -413,19 +534,113 @@ def im_nav(
                        Phase 1: filtra candidatos com score semântico >= MIN_SCORE
                        Phase 2: rerank por MW × affordance_max_confidence
                        Ref: MemRL (arXiv:2601.03192) + MemoryWorth (arXiv:2604.12007)
+    mode="lexical"   — DCI nativo: full-text (FTS5) sem embedder. Recupera tokens
+                       que o vetor borra (SHA, porta, versão, código de erro, path).
+                       Ref: DCI/GrepSeek 2026-06-03. Também é fallback automático
+                       quando o embedder Ollama falha em semantic/utility.
+    mode="hierarchical" — H-MEM (arXiv:2507.22925 §3.3): retrieval recursivo top-down
+                       pela árvore layer/child_ptrs. Cada hit traz um `confidence`
+                       injetado no contexto (não só ranking). Enquanto a árvore não
+                       está populada (pré-consolidação), o pool flat de órfãos
+                       responde 100% — opt-in via IMI_HMEM_RETRIEVAL, nunca default.
     """
     t0 = _time_module.monotonic()
     space = _get_space()
     rw = None if relevance_weight < 0 else relevance_weight
 
-    nav = space.navigate(
-        query,
-        zoom=zoom,
-        top_k=top_k if mode == "semantic" else top_k * 3,
-        context=context,
-        relevance_weight=rw,
-        positional_optimize=positional_optimize,
-    )
+    # Caminho lexical explícito: bypassa navigate()/embedder por completo.
+    if mode == "lexical":
+        memories = _lexical_search(space, query, top_k)
+        elapsed_ms = (_time_module.monotonic() - t0) * 1000
+        _record_latency(elapsed_ms)
+        _log(f"im_nav '{query[:40]}' — {elapsed_ms:.1f}ms | hits={len(memories)} mode=lexical")
+        return json.dumps(
+            {
+                "query": query,
+                "retrieval_mode": "lexical",
+                "hits": len(memories),
+                "memories": memories,
+                "_perf_ms": round(elapsed_ms, 1),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+
+    # Caminho hierárquico explícito (H-MEM §3.3): desce a árvore layer/child_ptrs
+    # em vez de varrer o store flat. Opt-in via IMI_HMEM_RETRIEVAL=1; nunca default.
+    # Enquanto a árvore não está populada (pré-consolidação), o pool flat de órfãos
+    # (ASSERT-6) responde 100% — por design, não por falha. Retorna confidence por
+    # hit (ASSERT-5): o peso é INJETADO no contexto, não só usado no ranking.
+    if mode == "hierarchical":
+        from imi.hmem_retrieve import recursive_retrieve
+
+        query_emb = space.embedder.embed(query)
+        hres = recursive_retrieve(query_emb, [space.episodic, space.semantic], k_final=top_k)
+        memories = []
+        for h in hres.hits:
+            d = h.node.to_dict()
+            content = d.get("summary_medium") or d.get("seed") or d.get("summary_orbital") or ""
+            memories.append(
+                {
+                    "score": round(h.confidence, 3),
+                    "confidence": round(h.confidence, 3),  # ASSERT-5: surfaced to the LLM
+                    "via": h.via,  # "tree" | "orphan" — honesty about the path taken
+                    "content": content,
+                    "id": h.node.id,
+                    "tags": d.get("tags", []),
+                }
+            )
+        elapsed_ms = (_time_module.monotonic() - t0) * 1000
+        _record_latency(elapsed_ms)
+        _log(
+            f"im_nav '{query[:40]}' — {elapsed_ms:.1f}ms | hits={len(memories)} "
+            f"mode=hierarchical tree={hres.tree_nodes_visited} orphans={hres.orphan_pool_size}"
+        )
+        return json.dumps(
+            {
+                "query": query,
+                "retrieval_mode": "hierarchical",
+                "hits": len(memories),
+                "memories": memories,
+                "tree_nodes_visited": hres.tree_nodes_visited,
+                "orphan_pool_size": hres.orphan_pool_size,
+                "broken_ptrs": hres.broken_ptrs,
+                "_perf_ms": round(elapsed_ms, 1),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+
+    try:
+        nav = space.navigate(
+            query,
+            zoom=zoom,
+            top_k=top_k if mode == "semantic" else top_k * 3,
+            context=context,
+            relevance_weight=rw,
+            positional_optimize=positional_optimize,
+        )
+    except RuntimeError as e:
+        # Fallback DCI: embedder caiu ("no embeddings") → degradar para lexical
+        # em vez de devolver erro inerte. Visível ao agente via degraded_to flag.
+        if "embedding" not in str(e).lower():
+            raise
+        memories = _lexical_search(space, query, top_k)
+        elapsed_ms = (_time_module.monotonic() - t0) * 1000
+        _log(f"im_nav '{query[:40]}' — embedder falhou, fallback lexical | hits={len(memories)}")
+        return json.dumps(
+            {
+                "query": query,
+                "retrieval_mode": "lexical",
+                "degraded_from": mode,
+                "degraded_reason": "embedder unavailable — DCI lexical fallback",
+                "hits": len(memories),
+                "memories": memories,
+                "_perf_ms": round(elapsed_ms, 1),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
 
     rw_used, intent_obj = space.adaptive_rw.classify_with_info(query)
 
@@ -450,6 +665,14 @@ def im_nav(
     else:
         final_memories = raw_memories[:top_k]
 
+    # ST-IMI-BUDGET-01 F1 (trilho reservado de intenção): nós vinculados a intenção
+    # pendente ativa que caíram fora do top_k são re-injetados — imunes ao corte. Fecha
+    # o furo "intenção órfã silenciosa" (intenções são estruturalmente baixa-salience →
+    # primeiras a serem cortadas). Opt-in via IMI_INTENT_RAIL=1 até o pacote budget-cap
+    # fechar; falha graciosa (índice vazio → no-op). O(1) por candidato via _intent_index.
+    if os.getenv("IMI_INTENT_RAIL", "0") == "1":
+        final_memories = _inject_active_intent_rail(space, raw_memories, final_memories)
+
     memories = []
     for m in final_memories:
         mem = {
@@ -466,6 +689,26 @@ def im_nav(
             node = space.episodic.get(m.get("id", "")) or space.semantic.get(m.get("id", ""))
             mem["mw_score"] = _mw_score_from_node(node) if node else 0.5
         memories.append(mem)
+
+    # Shadow-mode (H-MEM §4.5 step 4): run hierarchical BESIDE the served flat
+    # result and log divergence. Opt-in via IMI_HMEM_SHADOW=1; never changes what
+    # is served (`memories` above is returned untouched). Failure here never
+    # blocks the query — the divergence log is best-effort telemetry.
+    if os.getenv("IMI_HMEM_SHADOW", "0") == "1":
+        try:
+            from imi.hmem_shadow import shadow_compare
+
+            query_emb = space.embedder.embed(query)
+            flat_pairs = [
+                (n, m.get("score", 0.0))
+                for m in memories
+                if (n := space.episodic.get(m["id"]) or space.semantic.get(m["id"]))
+            ]
+            shadow_compare(
+                query, query_emb, flat_pairs, [space.episodic, space.semantic], k_final=top_k
+            )
+        except Exception as e:  # noqa: BLE001 — shadow telemetry must never break im_nav
+            _log(f"im_nav shadow-mode skipped: {type(e).__name__}: {e}")
 
     elapsed_ms = (_time_module.monotonic() - t0) * 1000
     _record_latency(elapsed_ms)
@@ -640,6 +883,9 @@ def im_int(
     space.episodic.nodes.append(mn)
     space.episodic._dirty = True
 
+    # T3: nova intenção pendente entra no índice ativo (incremental, O(1))
+    _intent_index.on_intent_created(node_id)
+
     _log(f"im_int created: {node_id} | project={project} deadline={deadline}")
 
     return json.dumps(
@@ -736,6 +982,9 @@ def im_int_fulfill(
             edge_created = True
         except Exception as e:
             _log(f"im_int_fulfill edge WARN: {e}")
+
+    # T3: intenção cumprida deixa de ser ativa (incremental, remove do índice)
+    _intent_index.on_intent_fulfilled(intent_id)
 
     _log(f"im_int_fulfill: {intent_id} → fulfilled | by={fulfilled_by} edge={edge_created}")
 

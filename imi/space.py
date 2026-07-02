@@ -594,6 +594,9 @@ class IMISpace:
             embedder=self.embedder,
             llm=self._llm(),
             similarity_threshold=similarity_threshold,
+            # H-MEM §3.4: episodic members re-parented by tree promotion must be
+            # marked dirty here, or _save_dirty_nodes() drops their new parent_id.
+            dirty_sink=self.mark_node_dirty,
         )
 
         # Track energy for annealing convergence

@@ -84,6 +84,17 @@ class MemoryNode:
     tier: int = 3  # Default: L3 (deep). 0=identity, 1=hot facts, 2=filtered, 3=deep
     tier_updated_at: float = 0.0
 
+    # --- H-MEM: índice posicional cross-layer (arXiv:2507.22925, spec 2026-06-14) ---
+    # ORTOGONAL ao `tier`: tier mede quão QUENTE (exibição/token); layer mede quão ABSTRATO
+    # (roteamento de busca). NUNCA fundir os dois. 0=Domain 1=Category 2=Trace 3=Episode.
+    # layer=3 (Episode/conteúdo) é o default — só promoção na consolidação sobe um nó.
+    layer: int = 3
+    parent_id: str | None = None  # self-index H-MEM: nó pai na camada acima (p_(i-1)x do paper)
+    # K ponteiros p/ filhos na camada abaixo (p_i1..p_iK). DERIVADOS do grafo na consolidação,
+    # nunca fonte de verdade (CHECK-3 da spec: ptr quebrado → nó vira folha). Distinto de
+    # `invalidated_by` (que é cadeia de supersedência temporal, não hierarquia de abstração).
+    child_ptrs: list[str] = field(default_factory=list)
+
     # Schema v2: MW data (H2 fix — separate from seed)
     mw_data: dict | None = None
 
@@ -170,6 +181,13 @@ class MemoryNode:
             d["valid_until"] = self.valid_until
         if self.invalidated_by is not None:
             d["invalidated_by"] = self.invalidated_by
+        # H-MEM: só serializa se promovido/ligado (nó legado layer=3 sem ptrs não incha o DB)
+        if self.layer != 3:
+            d["layer"] = self.layer
+        if self.parent_id is not None:
+            d["parent_id"] = self.parent_id
+        if self.child_ptrs:
+            d["child_ptrs"] = self.child_ptrs
         if self.mw_data is not None:
             d["mw_data"] = self.mw_data
         if self.original is not None:

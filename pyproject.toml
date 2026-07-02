@@ -46,6 +46,9 @@ all = ["imi-memory[llm]", "imi-memory[mcp]", "imi-memory[api]", "imi-memory[lang
 dev = [
     "pytest>=8.0.0",
     "ruff>=0.4.0",
+    # tests/test_api.py importa fastapi.testclient — sem isto a coleta do pytest
+    # quebra em ModuleNotFoundError no CI (só instala .[dev]). Ver run 28617626852.
+    "imi-memory[api]",
 ]
 
 [project.urls]
@@ -73,3 +76,6 @@ select = ["E", "F", "I", "W"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "integration: requer serviço externo vivo (Ollama/embedding/API HTTP); excluído do CI",
+]
