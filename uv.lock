@@ -835,8 +835,10 @@ api = [
     { name = "uvicorn" },
 ]
 dev = [
+    { name = "fastapi" },
     { name = "pytest" },
     { name = "ruff" },
+    { name = "uvicorn" },
 ]
 langchain = [
     { name = "langchain-core" },
@@ -859,6 +861,7 @@ requires-dist = [
     { name = "fastapi", marker = "extra == 'api'", specifier = ">=0.115.0" },
     { name = "hdbscan", marker = "extra == 'spatial'", specifier = ">=0.8.0" },
     { name = "imi-memory", extras = ["api"], marker = "extra == 'all'" },
+    { name = "imi-memory", extras = ["api"], marker = "extra == 'dev'" },
     { name = "imi-memory", extras = ["langchain"], marker = "extra == 'all'" },
     { name = "imi-memory", extras = ["llm"], marker = "extra == 'all'" },
     { name = "imi-memory", extras = ["mcp"], marker = "extra == 'all'" },
