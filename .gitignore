@@ -33,3 +33,10 @@ HANDOFF-*.md
 *.db-wal
 *.db-journal
 logs/
+
+# Runtime da memória viva — NÃO versionar estado que muda a cada im_enc.
+# Motivo: imi_memory.graph.json aparecia como `M` toda sessão (ruído) e os
+# snapshots/backups do .db escapavam de *.db por terem sufixo no meio do nome.
+imi_memory.graph.json
+imi_memory.db.bak-*
+imi_memory.db.eternal-snapshot-*
