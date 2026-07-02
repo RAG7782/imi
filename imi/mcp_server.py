@@ -491,6 +491,30 @@ def _lexical_search(space, query: str, top_k: int) -> list[dict]:
     return memories
 
 
+def _inject_active_intent_rail(space, raw_memories: list[dict], final_memories: list[dict]) -> list[dict]:
+    """ST-IMI-BUDGET-01 F1: re-injeta nós de intenção ativa cortados pelo top_k.
+
+    Um nó vinculado a intenção pendente ativa (via _intent_index, O(1)) NUNCA deve ser
+    silenciosamente descartado do retrieval — senão o protocolo de Camada A ("intenção
+    possivelmente concluída?") nunca dispara. Aqui: se algum candidato de `raw_memories`
+    é intenção-ativa mas ficou fora de `final_memories`, ele é anexado ao fim.
+
+    Falha graciosa (SC-5): índice vazio ou sem ativos → retorna `final_memories` intacto.
+    O(N) sobre raw_memories (já em memória), lookup O(1) por candidato.
+    """
+    if _intent_index.active_intent_count == 0:
+        return final_memories
+    already = {m.get("id", "") for m in final_memories}
+    rail = [
+        m for m in raw_memories
+        if m.get("id") and m["id"] not in already and _intent_index.is_node_active(m["id"])
+    ]
+    if not rail:
+        return final_memories
+    _log(f"im_nav intent-rail: re-injetados {len(rail)} nó(s) de intenção ativa (F1)")
+    return final_memories + rail
+
+
 @mcp.tool()
 def im_nav(
     query: str,
@@ -638,6 +662,14 @@ def im_nav(
         final_memories = candidates[:top_k]
     else:
         final_memories = raw_memories[:top_k]
+
+    # ST-IMI-BUDGET-01 F1 (trilho reservado de intenção): nós vinculados a intenção
+    # pendente ativa que caíram fora do top_k são re-injetados — imunes ao corte. Fecha
+    # o furo "intenção órfã silenciosa" (intenções são estruturalmente baixa-salience →
+    # primeiras a serem cortadas). Opt-in via IMI_INTENT_RAIL=1 até o pacote budget-cap
+    # fechar; falha graciosa (índice vazio → no-op). O(1) por candidato via _intent_index.
+    if os.getenv("IMI_INTENT_RAIL", "0") == "1":
+        final_memories = _inject_active_intent_rail(space, raw_memories, final_memories)
 
     memories = []
     for m in final_memories:
