@@ -76,3 +76,6 @@ select = ["E", "F", "I", "W"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "integration: requer serviço externo vivo (Ollama/embedding/API HTTP); excluído do CI",
+]

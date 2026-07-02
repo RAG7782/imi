@@ -2,10 +2,16 @@
 
 import os
 
+import pytest
+
 # Force OllamaLLM backend so tests don't require the 'anthropic' package
 os.environ.setdefault("IMI_LLM_BACKEND", "ollama")
 
 from imi.integrations.langchain import IMIMemory
+
+# Backend OllamaLLM faz HTTP para o Ollama (ausente no CI → ConnectionRefused).
+# Excluído do CI com `-m "not integration"`; roda localmente com Ollama de pé.
+pytestmark = pytest.mark.integration
 
 
 class TestIMIMemory:

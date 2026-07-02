@@ -5,6 +5,11 @@ from fastapi.testclient import TestClient
 
 from imi.api import app
 
+# Exercita o stack de embedding/space vivo via TestClient — requer serviço
+# externo (ausente no CI isolado → ConnectionRefused). Excluído do CI com
+# `-m "not integration"`; roda localmente com a infra de pé.
+pytestmark = pytest.mark.integration
+
 
 @pytest.fixture(autouse=True)
 def reset_space(tmp_path, monkeypatch):

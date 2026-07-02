@@ -30,4 +30,6 @@ jobs:
         run: ruff check imi/ tests/
 
       - name: Run tests
-        run: python -m pytest tests/ -v --tb=short
+        # Exclui testes de integração que precisam de serviço externo vivo
+        # (Ollama/embedding/API HTTP) — indisponível no runner isolado.
+        run: python -m pytest tests/ -v --tb=short -m "not integration"
