@@ -129,7 +129,6 @@ def test_cycle_does_not_hang(tree_store):
 
 def test_k_topo_wider_than_k_final(monkeypatch):
     """ASSERT-7: the Domain-layer beam is k_topo = 3× k_final by default."""
-    from imi import hmem_retrieve
 
     # Build 6 domain nodes; with k_final=2, k_topo=6 keeps all of them in the beam.
     doms = []

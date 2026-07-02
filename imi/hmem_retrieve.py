@@ -242,7 +242,9 @@ def recursive_retrieve(
         # via="tree" for episodes reached by descent; "index" for an index node
         # surfaced as a hit (Option A) — keeps the shadow log honest about path.
         via = "index" if (node.layer < _EPISODE_LAYER and node.child_ptrs) else "tree"
-        merged.append(HMemHit(node=node, confidence=max(0.0, _cosine(query_embedding, node)), via=via))
+        merged.append(
+            HMemHit(node=node, confidence=max(0.0, _cosine(query_embedding, node)), via=via)
+        )
 
     # Orphan pool: flat TopK, merged so no legacy node is ever lost (ASSERT-6).
     for orphan in _topk_by_sim(query_embedding, orphan_nodes, k_final):
@@ -250,7 +252,9 @@ def recursive_retrieve(
             continue
         seen.add(orphan.id)
         merged.append(
-            HMemHit(node=orphan, confidence=max(0.0, _cosine(query_embedding, orphan)), via="orphan")
+            HMemHit(
+                node=orphan, confidence=max(0.0, _cosine(query_embedding, orphan)), via="orphan"
+            )
         )
 
     # Collapsed-tree safety net: blend a bounded flat sweep of IN-TREE leaf episodes
@@ -268,7 +272,9 @@ def recursive_retrieve(
                 continue
             seen.add(leaf.id)
             merged.append(
-                HMemHit(node=leaf, confidence=max(0.0, _cosine(query_embedding, leaf)), via="collapsed")
+                HMemHit(
+                    node=leaf, confidence=max(0.0, _cosine(query_embedding, leaf)), via="collapsed"
+                )
             )
 
     merged.sort(key=lambda h: h.confidence, reverse=True)

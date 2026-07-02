@@ -19,7 +19,6 @@ Invariants under test:
   4. `layer` is orthogonal to `tier`: setting one never moves the other.
 """
 
-import pytest
 
 from imi.node import MemoryNode
 

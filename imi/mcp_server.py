@@ -18,6 +18,8 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
+from imi.intent_index import ActiveIntentIndex, is_real_link
+
 # --- Server setup (no instructions = 0 tokens) ---
 
 mcp = FastMCP("imi", port=int(os.environ.get("IMI_PORT", "8080")))
@@ -35,8 +37,6 @@ _space_lock = threading.RLock()
 
 # ST-IMI-INTENT-INDEX: índice O(1) de intenções ativas, pareado ao _space singleton
 # (mesmo lifecycle/lock). Reconstruído quando o space (re)carrega — ver _get_space.
-from imi.intent_index import ActiveIntentIndex, is_real_link
-
 _intent_index: ActiveIntentIndex = ActiveIntentIndex()
 
 
@@ -491,7 +491,9 @@ def _lexical_search(space, query: str, top_k: int) -> list[dict]:
     return memories
 
 
-def _inject_active_intent_rail(space, raw_memories: list[dict], final_memories: list[dict]) -> list[dict]:
+def _inject_active_intent_rail(
+    space, raw_memories: list[dict], final_memories: list[dict]
+) -> list[dict]:
     """ST-IMI-BUDGET-01 F1: re-injeta nós de intenção ativa cortados pelo top_k.
 
     Um nó vinculado a intenção pendente ativa (via _intent_index, O(1)) NUNCA deve ser
@@ -702,7 +704,9 @@ def im_nav(
                 for m in memories
                 if (n := space.episodic.get(m["id"]) or space.semantic.get(m["id"]))
             ]
-            shadow_compare(query, query_emb, flat_pairs, [space.episodic, space.semantic], k_final=top_k)
+            shadow_compare(
+                query, query_emb, flat_pairs, [space.episodic, space.semantic], k_final=top_k
+            )
         except Exception as e:  # noqa: BLE001 — shadow telemetry must never break im_nav
             _log(f"im_nav shadow-mode skipped: {type(e).__name__}: {e}")
 

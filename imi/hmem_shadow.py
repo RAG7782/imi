@@ -33,7 +33,7 @@ import numpy as np
 from imi.hmem_retrieve import recursive_retrieve
 
 if TYPE_CHECKING:
-    from imi.node import MemoryNode
+    pass
 
 _SHADOW_LOG = Path(
     os.getenv("IMI_HMEM_SHADOW_LOG", str(Path.home() / ".imi" / "hmem_shadow.jsonl"))
@@ -164,5 +164,7 @@ def summarize(log_path: Path = _SHADOW_LOG, since_days: float | None = None) -> 
         # The gate is only valid once the tree is doing the work:
         "gate_meaningful": populated >= n * 0.5,
         "promote_ok": div_rate < 0.02 and populated >= n * 0.5,
-        "promotion_criterion": "top1_divergence < 0.02 AND tree populated AND canary 100% for 2 weeks",
+        "promotion_criterion": (
+            "top1_divergence < 0.02 AND tree populated AND canary 100% for 2 weeks"
+        ),
     }

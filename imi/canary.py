@@ -62,7 +62,10 @@ class CanaryReport:
     def __str__(self) -> str:
         if self.status == "unavailable":
             return f"[CANARY] unavailable — {self.reason}"
-        line = f"[CANARY] {self.status} — {self.hits}/{self.total} anchors hit ({self.hit_rate:.0%})"
+        line = (
+            f"[CANARY] {self.status} — {self.hits}/{self.total} "
+            f"anchors hit ({self.hit_rate:.0%})"
+        )
         if self.misses:
             line += "\n  MISSES (retrieval drift):"
             for m in self.misses:
@@ -188,7 +191,9 @@ def run_canary(space: Any, anchors: list[Anchor], top_k: int = 10) -> CanaryRepo
     report = CanaryReport(total=len(anchors))
     if not anchors:
         report.status = "unavailable"
-        report.reason = "no anchors — run derive_candidate_anchors and freeze ~/.imi/canary_anchors.json"
+        report.reason = (
+            "no anchors — run derive_candidate_anchors and freeze ~/.imi/canary_anchors.json"
+        )
         return report
 
     for a in anchors:

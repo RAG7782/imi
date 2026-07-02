@@ -9,14 +9,14 @@ IMISpace with known nodes, so they run offline (no Ollama, no production DB).
 
 import pytest
 
-from imi.canary import Anchor, CanaryReport, run_canary, load_anchors
+from imi.canary import Anchor, CanaryReport, load_anchors, run_canary
 
 
 @pytest.fixture
 def space_with_known_nodes(tmp_path):
     """A small SQLite-backed space with two distinctively-tokened nodes."""
-    from imi.space import IMISpace
     from imi.node import MemoryNode
+    from imi.space import IMISpace
 
     space = IMISpace.from_sqlite(str(tmp_path / "canary_test.db"))
     # Two nodes with rare, distinctive tokens in their text.

@@ -14,10 +14,9 @@ rede de não-regressão em CI). Cobrem:
 import pytest
 
 from imi.intent_index import (
+    LINK_TAG_OVERLAP_MIN,
     ActiveIntentIndex,
     is_real_link,
-    LINK_TAG_OVERLAP_MIN,
-    LINK_WORD_OVERLAP_MIN,
 )
 
 
