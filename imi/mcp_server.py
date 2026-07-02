@@ -33,6 +33,36 @@ _LOG_FILE = Path.home() / ".claude" / "imi_boot.log"
 # H13 fix: RLock for thread-safe singleton access
 _space_lock = threading.RLock()
 
+# ST-IMI-INTENT-INDEX: índice O(1) de intenções ativas, pareado ao _space singleton
+# (mesmo lifecycle/lock). Reconstruído quando o space (re)carrega — ver _get_space.
+from imi.intent_index import ActiveIntentIndex, is_real_link
+
+_intent_index: ActiveIntentIndex = ActiveIntentIndex()
+
+
+def _rebuild_intent_index(space) -> None:
+    """T2: repovoa o índice de intenções ativas a partir do store episódico.
+
+    Varre os nós de intenção pendentes uma vez (no (re)load do space, fora do caminho
+    quente de retrieval) e reconstrói o set ativo. Falha graciosa (SC-5): erro aqui
+    loga e deixa o índice como está — nunca derruba o _get_space.
+    """
+    try:
+        pending = []
+        for node in space.episodic.nodes:
+            if not node.summary_orbital.startswith("[INTENT:"):
+                continue
+            try:
+                data = json.loads(node.seed)
+            except Exception:
+                continue
+            if data.get("node_type") == "intention" and data.get("status") == "pending":
+                pending.append({"id": node.id})
+        _intent_index.rebuild(pending)
+        _log(f"intent_index rebuilt: {_intent_index.active_intent_count} active intention(s)")
+    except Exception as e:  # SC-5: degrada, não bloqueia
+        _log(f"intent_index rebuild WARN (degraded): {e}")
+
 
 def _log(msg: str) -> None:
     try:
@@ -75,6 +105,8 @@ def _get_space():
                 f"from_sqlite() #{_sqlite_load_count} — {elapsed:.1f}ms | "
                 f"episodic={len(_space.episodic.nodes)} semantic={len(_space.semantic.nodes)}"
             )
+            # T2: repovoa o índice de intenções ativas junto com o (re)load do space
+            _rebuild_intent_index(_space)
         return _space
 
 
@@ -138,14 +170,17 @@ def _check_intent_resolved_in_memory(
     return None
 
 
-def _find_related_intentions(space, tag_list: list[str], experience: str) -> list[dict]:
-    """IMI-E04 S06 + Camada A: Find pending intentions with tag or keyword overlap.
+def _find_related_intentions(
+    space, tag_list: list[str], experience: str, encoded_node_id: str = ""
+) -> list[dict]:
+    """IMI-E04 S06 + Camada A: Find pending intentions genuinely linked to this memory.
 
-    Matches by: (1) direct tag intersection, (2) keyword presence in intention content.
-    Camada A: antes de retornar como pendente, verifica se já existe evidência de
-    conclusão em memória episódica recente. Se sim, marca como possibly_resolved=True
-    para que o agente confirme com o usuário em vez de exibir como ativa.
-    Returns intentions sorted by overlap_score DESC, max 3.
+    T4 (ST-IMI-INTENT-INDEX / SC-4): o vínculo agora exige `is_real_link` (umbral RÍGIDO —
+    tag>=2 OU word>=3), não o `overlap_score>=1` frouxo de antes. Aquele umbral fazia a
+    `resolution_evidence` genérica (ex.: "Renato quer 3 consultas grátis JUDIT") colar em
+    intenções díspares (OpenCut, backup, FI-Engine...) — o bug do matcher. `resolution_evidence`
+    só é anexada quando o vínculo é real, e o vínculo real é registrado no _intent_index
+    (habilita o trilho F1 da BUDGET-01). Returns intentions sorted by overlap_score DESC, max 3.
     """
     exp_words = set(w.lower() for w in experience.split() if len(w) > 4)
     tag_set = set(t.lower() for t in (tag_list or []))
@@ -166,28 +201,32 @@ def _find_related_intentions(space, tag_list: list[str], experience: str) -> lis
         intent_tags = set(t.lower() for t in (data.get("tags") or []))
         intent_words = set(w.lower() for w in data.get("content", "").split() if len(w) > 4)
 
-        tag_overlap = len(tag_set & intent_tags)
-        word_overlap = len(exp_words & intent_words)
-        overlap_score = tag_overlap * 2 + word_overlap  # tags contam mais
+        # SC-4: vínculo REAL (rígido), não overlap frouxo. Corrige o bug do matcher.
+        if not is_real_link(intent_tags, intent_words, tag_set, exp_words):
+            continue
 
-        if overlap_score >= 1:
-            entry = {
-                "id": node.id,
-                "content": data.get("content", "")[:120],
-                "project": data.get("project", ""),
-                "deadline": data.get("deadline", ""),
-                "overlap_score": overlap_score,
-                "tag_matches": list(tag_set & intent_tags),
-            }
-            # Camada A — verificação de conclusão latente
-            evidence = _check_intent_resolved_in_memory(
-                space, node.id, data.get("content", ""), data.get("tags", [])
-            )
-            if evidence:
-                entry["possibly_resolved"] = True
-                entry["resolution_evidence"] = evidence["summary"]
-                entry["resolution_evidence_id"] = evidence["evidence_id"]
-            matches.append(entry)
+        # Vínculo real → registra no índice ativo (T3/F1) se temos o node_id do encode
+        if encoded_node_id:
+            _intent_index.link(node.id, encoded_node_id)
+
+        overlap_score = len(tag_set & intent_tags) * 2 + len(exp_words & intent_words)
+        entry = {
+            "id": node.id,
+            "content": data.get("content", "")[:120],
+            "project": data.get("project", ""),
+            "deadline": data.get("deadline", ""),
+            "overlap_score": overlap_score,
+            "tag_matches": list(tag_set & intent_tags),
+        }
+        # Camada A — verificação de conclusão latente (só para vínculos reais agora)
+        evidence = _check_intent_resolved_in_memory(
+            space, node.id, data.get("content", ""), data.get("tags", [])
+        )
+        if evidence:
+            entry["possibly_resolved"] = True
+            entry["resolution_evidence"] = evidence["summary"]
+            entry["resolution_evidence_id"] = evidence["evidence_id"]
+        matches.append(entry)
 
     matches.sort(key=lambda x: x["overlap_score"], reverse=True)
     return matches[:3]
@@ -269,8 +308,8 @@ def im_enc(
     if surprise and surprise > 0.0:
         node.surprise_magnitude = max(0.0, min(1.0, surprise))
 
-    # IMI-E04 S06: Check for pending intentions with tag/keyword overlap
-    related_intentions = _find_related_intentions(space, tag_list or [], experience)
+    # IMI-E04 S06: Check for pending intentions genuinely linked to this memory (T4)
+    related_intentions = _find_related_intentions(space, tag_list or [], experience, node.id)
 
     result = {
         "id": node.id,
@@ -311,6 +350,8 @@ def im_enc(
                         "[INTENT:", "[DONE:"
                     )
                     space.backend.put_node("episodic", intent_node)
+                    # T3: auto-fulfill também remove a intenção do índice ativo
+                    _intent_index.on_intent_fulfilled(resolves_intent)
                     result["intent_resolved"] = resolves_intent
                     _log(
                         f"im_enc Camada-B: intent {resolves_intent} auto-fulfilled by {node.id[:8]}"
@@ -806,6 +847,9 @@ def im_int(
     space.episodic.nodes.append(mn)
     space.episodic._dirty = True
 
+    # T3: nova intenção pendente entra no índice ativo (incremental, O(1))
+    _intent_index.on_intent_created(node_id)
+
     _log(f"im_int created: {node_id} | project={project} deadline={deadline}")
 
     return json.dumps(
@@ -902,6 +946,9 @@ def im_int_fulfill(
             edge_created = True
         except Exception as e:
             _log(f"im_int_fulfill edge WARN: {e}")
+
+    # T3: intenção cumprida deixa de ser ativa (incremental, remove do índice)
+    _intent_index.on_intent_fulfilled(intent_id)
 
     _log(f"im_int_fulfill: {intent_id} → fulfilled | by={fulfilled_by} edge={edge_created}")
 
