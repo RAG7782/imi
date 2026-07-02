@@ -9,6 +9,17 @@ Implements CLS (Complementary Learning Systems):
 
 from __future__ import annotations
 
+# --- H-MEM tree promotion (spec §3.4) ---------------------------------------
+# A consolidated pattern node IS the H-MEM index node: it abstracts a cluster of
+# episodes, exactly the Trace layer (L2) of the paper. Promotion wires the tree:
+#   pattern_node.layer = TRACE; pattern_node.child_ptrs = [member ids]
+#   each member.parent_id = pattern_node.id
+# Acyclic BY CONSTRUCTION: the only edge direction is index(semantic) → member
+# (episodic). Members never get child_ptrs here, so no cycle can form (CHECK-2 is
+# the reader's backstop; this is the writer's guarantee).
+# Batch-only: this runs inside consolidate() (the dream cycle), never in the
+# im_enc hot path (R3). Default OFF until shadow data validates the tree (§4.5).
+import os as _os_promote
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -27,19 +38,6 @@ from imi.events import (
 from imi.llm import LLMAdapter
 from imi.node import MemoryNode
 from imi.store import VectorStore
-
-
-# --- H-MEM tree promotion (spec §3.4) ---------------------------------------
-# A consolidated pattern node IS the H-MEM index node: it abstracts a cluster of
-# episodes, exactly the Trace layer (L2) of the paper. Promotion wires the tree:
-#   pattern_node.layer = TRACE; pattern_node.child_ptrs = [member ids]
-#   each member.parent_id = pattern_node.id
-# Acyclic BY CONSTRUCTION: the only edge direction is index(semantic) → member
-# (episodic). Members never get child_ptrs here, so no cycle can form (CHECK-2 is
-# the reader's backstop; this is the writer's guarantee).
-# Batch-only: this runs inside consolidate() (the dream cycle), never in the
-# im_enc hot path (R3). Default OFF until shadow data validates the tree (§4.5).
-import os as _os_promote
 
 _HMEM_TRACE_LAYER = 2  # Trace = abstraction over a cluster of episodes
 _EPISODE_LAYER = 3
